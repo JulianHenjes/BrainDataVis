@@ -39,7 +39,7 @@ class Application():
         self.data_path = None
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
-        self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[4,5]),DataPlayer(self.root,self,row=2,column=0,sensor_ids=[6,7])]
+        self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
 
@@ -63,7 +63,8 @@ class Application():
                 self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=[i,i+1]))
                 i += 2# TODO
         # Shallow copy array
-        self.videoPlayer.dataPlayers = self.dataPlayers[:]
+        self.videoPlayer.dataplayers = self.dataPlayers[:]
+        self.loadData(data_path)# Load data into dataplayers
 
     def loadData(self,data_path):
         """Load fNIRS data from path"""
@@ -136,7 +137,7 @@ class Application():
 
 class DataPlayer():
 
-    def __init__(self,root,app,row=0,column=0,width=700,height=200,sensor_ids=[4,5]):
+    def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
         """Initialises data player"""
 
         # tkinter info
@@ -186,7 +187,7 @@ class DataPlayer():
         range_ = scalex[1] - scalex[0]
         if range_ < self.w//2 and factor > 0:
             range_ = self.w//2
-        if range_ > self.measurements*2 and factor < 0:
+        if self.measurements is not None and range_ > self.measurements*2 and factor < 0:
             range_ = self.measurements*2
         scalex[0] = self.progress*self.samplerate - range_/2
         scalex[1] = self.progress*self.samplerate + range_/2
@@ -320,6 +321,8 @@ class DataPlayer():
         if self.scalex[1]-self.scalex[0] == 0:
             return
         step = (self.scalex[1]-self.scalex[0])/self.w
+        # Draw Border
+        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
         # Draw x axis
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
@@ -532,6 +535,7 @@ app = Application()
 #audio = (for debugging)
 audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
 app.loadData(data_path)
+app.reconfigureChannels(data_path,[True]*16)
 app.play()
 ##app.reconfigureChannels(data_path,[True,True,False])
 app.mainloop()
