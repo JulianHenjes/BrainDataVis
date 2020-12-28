@@ -6,6 +6,7 @@
 # cv2
 # numpy
 # pygame
+# radon
 
 import tkinter as tk
 from PIL import ImageTk, Image
@@ -20,6 +21,9 @@ from enum import Enum
 import xml.etree.ElementTree as ET
 import datetime
 import threading
+# QA Code
+from radon.raw import analyze
+from radon.complexity import cc_rank, cc_visit
 
 # Colour blind colours
 RED = "#D55F00"# Vermillion
@@ -523,6 +527,20 @@ class VideoPlayer():
         self.player.after(self.delay//2, self.stream)# self.delay, or 0 for best video framerate
 
 
+def qa_test():
+    """Quality Assurance Logging Subroutine"""
+    # Reads Code and Runs Code Metrics
+    with open("BrainDataVisualiser.py","r") as file:
+        code = file.read()
+    with open("QA_LOGS.txt","a") as file:
+        # Timestamp and append metric results to log
+        file.write(datetime.date.today().strftime("%b-%d-%Y")+"\n\t")
+        file.write("General Analysis\n\t\t")
+        file.write(str(analyze(code))+"\n\t")
+        file.write("Cyclomatic Complexity\n")
+        for i in cc_visit(code):
+            file.write("\t\t"+cc_rank(i.complexity)+" "+str(i)+"\n")
+
 # For Testing
 THERMAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\P_09\\Thermal\\P_09_thermal.wmv"
 VISUAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\P_09\\Visual\\converted\\M2U00010.mp4"
@@ -530,6 +548,8 @@ VISUAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_
 
 vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
+
+##qa_test()
 
 app = Application()
 #audio = (for debugging)
