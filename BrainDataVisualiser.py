@@ -6,6 +6,7 @@
 # cv2
 # numpy
 # pygame
+# radon
 
 import tkinter as tk
 from PIL import ImageTk, Image
@@ -20,7 +21,13 @@ from enum import Enum
 import xml.etree.ElementTree as ET
 import datetime
 import threading
+# QA Code
+from radon.raw import analyze
+from radon.complexity import cc_rank, cc_visit
 
+# Colour blind colours
+RED = "#D55F00"# Vermillion
+BLUE = "#0072B2"# Blue
 
 class Application():
     """Class for Application Window"""
@@ -33,14 +40,39 @@ class Application():
 
         self.dataOffset = 0# Offset at which video is played relative to data
         self.controlLock = threading.Lock()
+        self.data_path = None
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
-        self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0)]
+        self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
 
+    def reconfigureChannels(self,data_path,channels):
+        """Given data_path to xml fNIRS file, and a boolean mask (channels),
+            destroy and recreate all necessary data players"""
+        # Remove references to data players
+        self.videoPlayer.dataPlayers = []
+        for dp in self.dataPlayers:
+            dp.unbind()# Unbind GUI
+            dp.c.destroy()# Destroy canvas objects
+        self.dataPlayers = []
+        i = 0
+        while i < len(channels):# For each channel
+            sensor_ids = []
+            for j in [0,1]:# For Oxy- and Deoxy-Haemoglobin Channels
+                if channels[i+j]:# If Channel set to display
+                    sensor_ids.append(i+j)
+            if channels[i]:# If visible flag set to true
+                # Create a dataplayer with configured sensors
+                self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=[i,i+1]))
+                i += 2# TODO
+        # Shallow copy array
+        self.videoPlayer.dataplayers = self.dataPlayers[:]
+        self.loadData(data_path)# Load data into dataplayers
+
     def loadData(self,data_path):
         """Load fNIRS data from path"""
+        self.data_path = data_path
         for dp in self.dataPlayers:
             dp.loadData(data_path)
             dp.draw()
@@ -109,7 +141,7 @@ class Application():
 
 class DataPlayer():
 
-    def __init__(self,root,app,row=0,column=0,width=700,height=200):
+    def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
         """Initialises data player"""
 
         # tkinter info
@@ -133,7 +165,7 @@ class DataPlayer():
         self.sensors = None# List of sensor names
         self.sensorMask = None# Boolean mask for which sensors outputs to draw
         self.measurements = None# Number of measurements
-        self.sensor_ids = [4,5]# Sensors to display in this data player
+        self.sensor_ids = sensor_ids# Sensors to display in this data player
         self.sensor_range = [0,1]# Range of lowest to highest sensor readings
 
         # Scrubber Visualisation
@@ -159,7 +191,7 @@ class DataPlayer():
         range_ = scalex[1] - scalex[0]
         if range_ < self.w//2 and factor > 0:
             range_ = self.w//2
-        if range_ > self.measurements*2 and factor < 0:
+        if self.measurements is not None and range_ > self.measurements*2 and factor < 0:
             range_ = self.measurements*2
         scalex[0] = self.progress*self.samplerate - range_/2
         scalex[1] = self.progress*self.samplerate + range_/2
@@ -189,8 +221,9 @@ class DataPlayer():
         t = "-"*(self.progress<0) +str(datetime.timedelta(seconds=abs(round(self.progress))))
         self.scrubber.append(self.c.create_text(x+3,0,text=str(t),anchor=tk.NW,tags=("scrubber")))# Timestamp
         if self.progress > 0:
-            self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),fill="#ff0000",anchor=tk.NW,tags=("scrubber")))# Red track value
-            self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill="#0000ff",anchor=tk.NW,tags=("scrubber")))# Blue track value
+            self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),fill=RED,anchor=tk.NW,tags=("scrubber")))# Red track value
+            if len(self.sensor_ids) == 2:# If blue track exists
+                self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=BLUE,anchor=tk.NW,tags=("scrubber")))# Blue track value
         
     def update(self,startTime):
         """Get updates from the video player"""
@@ -240,6 +273,10 @@ class DataPlayer():
         """Bind button press on this widget to zoom behaviour (via app class)"""
         self.c.bind("<MouseWheel>",self.app.zoom)
 
+    def unbind(self):
+        self.c.unbind("<Button-1>")
+        self.c.unbind("<MouseWheel>")
+
     def setScaleX(self,startx,endx):
         """Set x scale to list"""
         self.scalex = [startx,endx]
@@ -288,12 +325,15 @@ class DataPlayer():
         if self.scalex[1]-self.scalex[0] == 0:
             return
         step = (self.scalex[1]-self.scalex[0])/self.w
+        # Draw Border
+        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
         # Draw x axis
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
         # Draw lines at pixel level resolution
-        self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill="#ff0000",anchor=tk.NW)
-        self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill="#0000ff",anchor=tk.NW)
+        self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
+        if len(self.sensor_ids) == 2:# If displaying blue sensorW
+            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
         # Draw axis labels
         self.c.create_text(5,5,text=str(self.scaley[1]),fill="#000000",anchor=tk.NW)
         self.c.create_text(5,self.h-15,text=str(self.scaley[0]),fill="#000000",anchor=tk.SW)
@@ -302,7 +342,10 @@ class DataPlayer():
         if self.scalex[0] < 0:# Format correctly
             time_start = "-"+time_start
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
-        for s in [1,0]:# Draw red over blue
+        sens_index = [0]# If one sensor displayed in this data player
+        if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
+            sens_index = [1,0]# Draw order blue then red to make blue line on top
+        for s in sens_index:
             i = self.scalex[0]
             x = 0
             while i < self.scalex[1]:
@@ -319,7 +362,7 @@ class DataPlayer():
                     y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
                 except IndexError:# Missing data is skipped
                     continue
-                self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=["#ff0000","#0000ff"][s],width=2)
+                self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s],width=2)
         self.drawScrubber()
         self.c.update()
         
@@ -385,8 +428,11 @@ class VideoPlayer():
 
     def updateDataplayers(self):
         """Update subscribed dataplayer objects"""
-        for dp in self.dataplayers:
-            dp.update(self.startTimestamp)
+        try:
+            for dp in self.dataplayers:
+                dp.update(self.startTimestamp)
+        except tk.TclError:# If dataplayers are destroyed, pass
+            pass
 
     def play(self,event=None):
         """Causes the media to play, or resume playing"""
@@ -478,8 +524,22 @@ class VideoPlayer():
         self.updateDataplayers()
 
         # Display next frame after delay
-        self.player.after(self.delay//2, self.stream)# self.delay, or 0 for best framerate
+        self.player.after(self.delay//2, self.stream)# self.delay, or 0 for best video framerate
 
+
+def qa_test():
+    """Quality Assurance Logging Subroutine"""
+    # Reads Code and Runs Code Metrics
+    with open("BrainDataVisualiser.py","r") as file:
+        code = file.read()
+    with open("QA_LOGS.txt","a") as file:
+        # Timestamp and append metric results to log
+        file.write(datetime.date.today().strftime("%b-%d-%Y")+"\n\t")
+        file.write("General Analysis\n\t\t")
+        file.write(str(analyze(code))+"\n\t")
+        file.write("Cyclomatic Complexity\n")
+        for i in cc_visit(code):
+            file.write("\t\t"+cc_rank(i.complexity)+" "+str(i)+"\n")
 
 # For Testing
 THERMAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\P_09\\Thermal\\P_09_thermal.wmv"
@@ -489,9 +549,14 @@ VISUAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_
 vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
 
+##qa_test()
+
 app = Application()
+#audio = (for debugging)
 audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
 app.loadData(data_path)
+app.reconfigureChannels(data_path,[True]*16)
 app.play()
+##app.reconfigureChannels(data_path,[True,True,False])
 app.mainloop()
 app.videoPlayer.vid.release()
