@@ -316,32 +316,37 @@ class DataPlayer():
             return round(float(self.data[int(t*self.samplerate)][sensor_id].text),3)
         except:# No data loaded, or scrubber out of bounds
             return 0
-    def draw(self):
-        self.clear()
-        """Draw braindata to canvas, according to fNIRS metadata and zoom level"""
-        if self.data == None:
-            return
-        # How much each pixel represents
-        if self.scalex[1]-self.scalex[0] == 0:
-            return
-        step = (self.scalex[1]-self.scalex[0])/self.w
+    def drawLayout(self):
+        """Draw the Graph Axis and Labels, with respect to fNIRS metadata and zoom"""
+        # Display sensor names
+        self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
+        if len(self.sensor_ids) == 2:# If displaying blue sensor
+            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
         # Draw Border
         self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
-        # Draw x axis
+        # Draw X Axis
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
-        # Draw lines at pixel level resolution
-        self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
-        if len(self.sensor_ids) == 2:# If displaying blue sensorW
-            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
-        # Draw axis labels
+        # Draw Y Axis Labels
         self.c.create_text(5,5,text=str(self.scaley[1]),fill="#000000",anchor=tk.NW)
         self.c.create_text(5,self.h-15,text=str(self.scaley[0]),fill="#000000",anchor=tk.SW)
         self.c.create_text(self.w-5,self.h-5,text=str(datetime.timedelta(seconds=round(self.scalex[1]/self.samplerate))),fill="#000000",anchor=tk.SE)
+        # Draw X Axis Labels
         time_start = str(datetime.timedelta(seconds=abs(round(self.scalex[0]/self.samplerate))))
         if self.scalex[0] < 0:# Format correctly
             time_start = "-"+time_start
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
+    def draw(self):
+        """Draw braindata to canvas, with respect to fNIRS metadata and zoom"""
+        self.clear()
+        if self.data == None:# If no data, break
+            return
+        # How much each pixel represents
+        if self.scalex[1]-self.scalex[0] == 0:
+            return
+        step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
+        # Draw Graph Background
+        self.drawLayout()
         sens_index = [0]# If one sensor displayed in this data player
         if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
             sens_index = [1,0]# Draw order blue then red to make blue line on top
