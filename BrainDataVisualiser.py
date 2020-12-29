@@ -411,6 +411,15 @@ class VideoPlayer():
 
         # Black Frame
         self.setBlackFrame()
+    # For comparing states
+    def isPlaying(self):
+        return self.state == VideoPlayer.State.PLAYING
+    def isPaused(self):
+        return self.state == VideoPlayer.State.PAUSED
+    def isStopped(self):
+        return self.state == VideoPlayer.State.STOPPED
+    def isEmpty(self):
+        return self.state == VideoPlayer.State.EMPTY
 
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
@@ -448,15 +457,15 @@ class VideoPlayer():
     def play(self,event=None):
         """Causes the media to play, or resume playing"""
         # If play -> play, ignore or if no video data
-        if self.state == VideoPlayer.State.PLAYING or self.state == VideoPlayer.State.EMPTY:
+        if self.isPlaying() or self.isEmpty():
             return
         # If stop -> play, restart clip
-        elif self.state == VideoPlayer.State.STOPPED:
+        elif self.isStopped():
             if self.hasAudio:
                 mixer.music.play(loops=0)
             self.startTimestamp = time.time()
         # If pause -> play, set progress and resume
-        elif self.state == VideoPlayer.State.PAUSED:
+        elif self.isPaused():
             if self.hasAudio:
                 mixer.music.load("project_audio.mp3")
             self.seek(self.progress)
@@ -476,7 +485,7 @@ class VideoPlayer():
             mixer.music.play(start=t,loops=0)
         self.updateDataplayers()
         # If already playing, skip calling the stream method, or if no video data loaded
-        if self.state == self.state.PLAYING or self.state == self.state.EMPTY:
+        if self.isPlaying() or self.isEmpty():
             return
         self.state = VideoPlayer.State.PLAYING
         self.root.after(0,self.stream)
@@ -484,7 +493,7 @@ class VideoPlayer():
     def pause(self,event=None):
         """Pause video and audio"""
         # If pause -> pause or stop -> pause, ignore, or if no video
-        if self.state != VideoPlayer.State.PLAYING:
+        if not self.isPlaying():
             return
         # If play -> pause
         self.progress = time.time() - self.startTimestamp
@@ -495,7 +504,7 @@ class VideoPlayer():
     def stop(self,event=None):
         """Stop video and audio"""
         # If no video data
-        if self.state == VideoPlayer.State.EMPTY:
+        if self.isEmpty():
             return
         if self.hasAudio:
             mixer.music.stop()
@@ -510,7 +519,7 @@ class VideoPlayer():
     def stream(self,event=None):
         """Start a video update loop"""
 
-        if self.state != VideoPlayer.State.PLAYING:# If not playing, return
+        if not self.isPlaying():# If not playing, return
             return
 
         # Calculate elapsed time
@@ -573,10 +582,10 @@ data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\
 
 app = Application()
 #audio = (for debugging)
-##audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
+audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
 app.loadData(data_path)
 app.reconfigureChannels(data_path,[True]*4)
-##app.play()
+app.play()
 ##app.reconfigureChannels(data_path,[True,True,False])
 app.mainloop()
 # Release video if used
