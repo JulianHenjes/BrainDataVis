@@ -29,6 +29,7 @@ from radon.complexity import cc_rank, cc_visit
 RED = "#D55F00"# Vermillion
 BLUE = "#0072B2"# Blue
 
+
 class Application():
     """Class for Application Window"""
     
@@ -38,6 +39,13 @@ class Application():
         self.root = tk.Tk()
         self.root.title("Brain Data Visualisation Tool")
 
+        # Create menubar
+        menubar = tk.Menu(tearoff=False)
+        self.root.config(menu=menubar)
+        filemenu = tk.Menu(menubar,tearoff=False)
+        filemenu.add_command(label="Import Video/fNIRS Data",command=self.launchImportWindow)
+        menubar.add_cascade(label="File",menu=filemenu)
+
         self.dataOffset = 0# Offset at which video is played relative to data
         self.controlLock = threading.Lock()
         self.data_path = None
@@ -46,6 +54,10 @@ class Application():
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
+
+    def launchImportWindow(self):
+        """Launches the Data Importing Interface"""
+        ImportDataWindow(self)
 
     def reconfigureChannels(self,data_path,channels):
         """Given data_path to xml fNIRS file, and a boolean mask (channels),
@@ -138,6 +150,32 @@ class Application():
         self.root.mainloop()
 
 
+class ImportDataWindow():
+    def __init__(self,app):
+        """Create a Window to get Project Data"""
+        # Keep Reference to Main Window
+        self.app = app
+        self.root = tk.Tk()
+        self.root.title("Import Data")
+        self.root.geometry("300x200")
+        # Create, Grid, and Bind Widgets
+        tk.Label(self.root,text="File Path to Video Data: ").grid(row=0,column=0,sticky=tk.NW,padx=3)
+        self.vidPathEntry = tk.Entry(self.root)
+        self.vidPathEntry.grid(row=1,column=0,sticky=tk.NW,padx=3)
+        self.loadAudio = tk.IntVar()
+        tk.Checkbutton(self.root,text="Use Cached Audio",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW,padx=3)
+        tk.Label(self.root,text="File Path to fNIRS (.xml) Data: ").grid(row=3,column=0,sticky=tk.NW,padx=3)
+        self.fnirsPathEntry = tk.Entry(self.root)
+        self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW,padx=3)
+        self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW,padx=3)
+        self.root.mainloop()
+    def onSubmit(self):
+        """Called when Submit Button is Pressed"""
+        vidpath = self.vidPathEntry.get()
+        xmlpath = self.fnirsPathEntry.get()
+        self.root.destroy()
+        self.app.videoPlayer.loadVideo(vidpath,loadAudio=self.loadAudio.get())
+        self.app.loadData(xmlpath)
 
 class DataPlayer():
 
@@ -573,10 +611,12 @@ def qa_test():
 # For Testing
 THERMAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\P_09\\Thermal\\P_09_thermal.wmv"
 VISUAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\P_09\\Visual\\converted\\M2U00010.mp4"
-
+#C:\Users\hench\OneDrive - The University of Nottingham\Julian_Max_project\P_09\Thermal\P_09_thermal.wmv
+#C:\Users\hench\OneDrive - The University of Nottingham\Julian_Max_project\P_09\Visual\converted\M2U00010.mp4
 
 vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
+#C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 
 ##qa_test()
 
