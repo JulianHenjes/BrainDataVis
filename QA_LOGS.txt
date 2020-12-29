@@ -81,3 +81,46 @@ Dec-28-2020
 		A M 478:4->487 VideoPlayer.pause - 3
 		A M 489:4->493 VideoPlayer.stop - 2
 		B M 495:4->532 VideoPlayer.stream - 7
+Dec-29-2020
+	General Analysis
+		Module(loc=584, lloc=440, sloc=397, comments=126, multi=2, blank=78, single_comments=107)
+	Cyclomatic Complexity
+		A F 550:0->562 qa_test - 2
+		A C 32:0->138 Application - 3
+		A M 35:4->48 Application.__init__ - 2
+		B M 50:4->71 Application.reconfigureChannels - 6
+		A M 73:4->78 Application.loadData - 2
+		A M 80:4->86 Application.play - 2
+		A M 88:4->94 Application.pause - 2
+		A M 96:4->102 Application.stop - 2
+		A M 104:4->111 Application.zoom - 3
+		A M 113:4->122 Application.skipFor - 2
+		A M 124:4->133 Application.bindHotkeys - 2
+		A M 135:4->138 Application.mainloop - 1
+		A C 142:0->372 DataPlayer - 3
+		A M 144:4->174 DataPlayer.__init__ - 1
+		A M 176:4->179 DataPlayer.clear - 1
+		B M 181:4->203 DataPlayer.zoom - 6
+		A M 205:4->211 DataPlayer.plot - 1
+		A M 213:4->226 DataPlayer.drawScrubber - 5
+		A M 228:4->254 DataPlayer.update - 4
+		A M 256:4->266 DataPlayer.seek - 1
+		A M 268:4->270 DataPlayer.bindSeek - 1
+		A M 272:4->274 DataPlayer.bindZoom - 1
+		A M 276:4->278 DataPlayer.unbind - 1
+		A M 280:4->284 DataPlayer.setScaleX - 1
+		A M 286:4->288 DataPlayer.setScaleY - 1
+		B M 290:4->312 DataPlayer.loadData - 6
+		A M 313:4->318 DataPlayer.getData - 2
+		A M 319:4->338 DataPlayer.drawLayout - 3
+		B M 339:4->372 DataPlayer.draw - 8
+		A C 376:0->547 VideoPlayer - 4
+		A M 386:4->413 VideoPlayer.__init__ - 1
+		A M 415:4->438 VideoPlayer.loadVideo - 3
+		A M 440:4->446 VideoPlayer.updateDataplayers - 3
+		B M 448:4->465 VideoPlayer.play - 7
+		B M 467:4->482 VideoPlayer.seek - 6
+		A M 484:4->493 VideoPlayer.pause - 3
+		A M 495:4->502 VideoPlayer.stop - 3
+		A M 504:4->508 VideoPlayer.setBlackFrame - 1
+		B M 510:4->547 VideoPlayer.stream - 7

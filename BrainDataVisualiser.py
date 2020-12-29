@@ -381,6 +381,7 @@ class VideoPlayer():
         PLAYING = 1
         PAUSED = 2
         STOPPED = 0
+        EMPTY = -1# No Associated Video Track
     
     def __init__(self,root,app,row=0,column=0,w=640,h=400):
         """Initialises video player into root"""
@@ -396,9 +397,9 @@ class VideoPlayer():
         self.w,self.h = w,h
 
         # State
-        self.state = VideoPlayer.State.STOPPED
+        self.state = VideoPlayer.State.EMPTY
         self.progress = 0
-        self.hasAudio = True
+        self.hasAudio = False
         
         # Video
         self.vid_path = ""
@@ -407,6 +408,9 @@ class VideoPlayer():
 
         # Linked DataPlayers
         self.dataplayers = []
+
+        # Black Frame
+        self.setBlackFrame()
 
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
@@ -419,6 +423,7 @@ class VideoPlayer():
 
         # Separate audio and save
         audio = VideoFileClip(self.vid_path).audio
+        self.hasAudio = True
         if audio == None:
             self.hasAudio = False
             return
@@ -430,6 +435,7 @@ class VideoPlayer():
             t_end = time.time()
             print("Done [",int(t_end-t_start),"]",sep="")
         mixer.music.load("project_audio.mp3")
+        self.state = VideoPlayer.State.STOPPED
 
     def updateDataplayers(self):
         """Update subscribed dataplayer objects"""
@@ -441,8 +447,8 @@ class VideoPlayer():
 
     def play(self,event=None):
         """Causes the media to play, or resume playing"""
-        # If play -> play, ignore
-        if self.state == VideoPlayer.State.PLAYING:
+        # If play -> play, ignore or if no video data
+        if self.state == VideoPlayer.State.PLAYING or self.state == VideoPlayer.State.EMPTY:
             return
         # If stop -> play, restart clip
         elif self.state == VideoPlayer.State.STOPPED:
@@ -469,15 +475,15 @@ class VideoPlayer():
         if self.hasAudio:
             mixer.music.play(start=t,loops=0)
         self.updateDataplayers()
-        # If already playing, skip calling the stream method
-        if self.state == self.state.PLAYING:
+        # If already playing, skip calling the stream method, or if no video data loaded
+        if self.state == self.state.PLAYING or self.state == self.state.EMPTY:
             return
         self.state = VideoPlayer.State.PLAYING
         self.root.after(0,self.stream)
 
     def pause(self,event=None):
         """Pause video and audio"""
-        # If pause -> pause or stop -> pause, ignore
+        # If pause -> pause or stop -> pause, ignore, or if no video
         if self.state != VideoPlayer.State.PLAYING:
             return
         # If play -> pause
@@ -488,14 +494,23 @@ class VideoPlayer():
 
     def stop(self,event=None):
         """Stop video and audio"""
+        # If no video data
+        if self.state == VideoPlayer.State.EMPTY:
+            return
         if self.hasAudio:
             mixer.music.stop()
         self.state = VideoPlayer.State.STOPPED
 
+    def setBlackFrame(self):
+        """Sets Widget to Display a Black Frame with Default Proportions"""
+        frame = ImageTk.PhotoImage(Image.fromarray(np.array([[0]*self.w]*self.h)))
+        self.player.config(image=frame)
+        self.player.image = frame
+
     def stream(self,event=None):
         """Start a video update loop"""
 
-        if self.state != VideoPlayer.State.PLAYING:
+        if self.state != VideoPlayer.State.PLAYING:# If not playing, return
             return
 
         # Calculate elapsed time
@@ -558,10 +573,12 @@ data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\
 
 app = Application()
 #audio = (for debugging)
-audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
+##audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
 app.loadData(data_path)
-app.reconfigureChannels(data_path,[True]*16)
-app.play()
+app.reconfigureChannels(data_path,[True]*4)
+##app.play()
 ##app.reconfigureChannels(data_path,[True,True,False])
 app.mainloop()
-app.videoPlayer.vid.release()
+# Release video if used
+if app.videoPlayer.vid != None:
+    app.videoPlayer.vid.release()
