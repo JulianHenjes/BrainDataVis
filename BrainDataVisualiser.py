@@ -21,6 +21,8 @@ from enum import Enum
 import xml.etree.ElementTree as ET
 import datetime
 import threading
+import mmap
+import ffmpeg
 # QA Code
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
@@ -43,12 +45,13 @@ class Application():
         menubar = tk.Menu(tearoff=False)
         self.root.config(menu=menubar)
         filemenu = tk.Menu(menubar,tearoff=False)
-        filemenu.add_command(label="Import Video/fNIRS Data",command=self.launchImportWindow)
+        filemenu.add_command(label="Project Configuration",command=self.launchImportWindow)
         menubar.add_cascade(label="File",menu=filemenu)
 
         self.dataOffset = 0# Offset at which video is played relative to data
         self.controlLock = threading.Lock()
-        self.data_path = None
+        self.dataPath = ""
+        self.videoPath = ""
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
@@ -57,10 +60,11 @@ class Application():
 
     def launchImportWindow(self):
         """Launches the Data Importing Interface"""
-        ImportDataWindow(self)
+        self.videoPlayer.stop()
+        self.w = ImportDataWindow(self)
 
-    def reconfigureChannels(self,data_path,channels):
-        """Given data_path to xml fNIRS file, and a boolean mask (channels),
+    def reconfigureChannels(self,dataPath,channels):
+        """Given dataPath to xml fNIRS file, and a boolean mask (channels),
             destroy and recreate all necessary data players"""
         # Remove references to data players
         self.videoPlayer.dataPlayers = []
@@ -80,14 +84,19 @@ class Application():
                 i += 2# TODO
         # Shallow copy array
         self.videoPlayer.dataplayers = self.dataPlayers[:]
-        self.loadData(data_path)# Load data into dataplayers
+        self.loadData(dataPath)# Load data into dataplayers
 
-    def loadData(self,data_path):
+    def loadData(self,dataPath):
         """Load fNIRS data from path"""
-        self.data_path = data_path
+        self.dataPath = dataPath
         for dp in self.dataPlayers:
-            dp.loadData(data_path)
+            dp.loadData(dataPath)
             dp.draw()
+
+    def loadVideo(self,path,loadAudio=False):
+        """Load Video From Path, Use Cached Audio if loadAudio is False"""
+        self.videoPlayer.loadVideo(path,loadAudio=loadAudio)
+        self.videoPath = path
 
     def play(self,event=None):
         """Play associated media and data players"""
@@ -149,32 +158,35 @@ class Application():
         self.bindHotkeys()
         self.root.mainloop()
 
-
 class ImportDataWindow():
     def __init__(self,app):
         """Create a Window to get Project Data"""
         # Keep Reference to Main Window
         self.app = app
-        self.root = tk.Tk()
-        self.root.title("Import Data")
-        self.root.geometry("300x200")
+        self.root = tk.Toplevel()
+        self.root.title("File")
+        self.root.geometry("750x200")
         # Create, Grid, and Bind Widgets
-        tk.Label(self.root,text="File Path to Video Data: ").grid(row=0,column=0,sticky=tk.NW,padx=3)
-        self.vidPathEntry = tk.Entry(self.root)
-        self.vidPathEntry.grid(row=1,column=0,sticky=tk.NW,padx=3)
+        tk.Label(self.root,text="File Path to Video Data: ").grid(row=0,column=0,sticky=tk.NW)
+        self.vidPathEntry = tk.Entry(self.root,width=120)
+        self.vidPathEntry.grid(row=1,column=0,sticky=tk.NW)
+        self.vidPathEntry.insert(tk.END,self.app.videoPath)
         self.loadAudio = tk.IntVar()
-        tk.Checkbutton(self.root,text="Use Cached Audio",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW,padx=3)
-        tk.Label(self.root,text="File Path to fNIRS (.xml) Data: ").grid(row=3,column=0,sticky=tk.NW,padx=3)
-        self.fnirsPathEntry = tk.Entry(self.root)
-        self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW,padx=3)
-        self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW,padx=3)
+        tk.Checkbutton(self.root,text="Use Cached Audio",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
+        tk.Label(self.root,text="File Path to fNIRS (.xml) Data: ").grid(row=3,column=0,sticky=tk.NW)
+        self.fnirsPathEntry = tk.Entry(self.root,width=120)
+        self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW)
+        self.fnirsPathEntry.insert(tk.END,self.app.dataPath)
+        self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW)
         self.root.mainloop()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
         vidpath = self.vidPathEntry.get()
         xmlpath = self.fnirsPathEntry.get()
+        self.app.dataPath = xmlpath
+        self.app.videoPath = vidpath
         self.root.destroy()
-        self.app.videoPlayer.loadVideo(vidpath,loadAudio=self.loadAudio.get())
+        self.app.loadVideo(vidpath,loadAudio=not self.loadAudio.get())# Invert Boolean
         self.app.loadData(xmlpath)
 
 class DataPlayer():
@@ -458,7 +470,6 @@ class VideoPlayer():
         return self.state == VideoPlayer.State.STOPPED
     def isEmpty(self):
         return self.state == VideoPlayer.State.EMPTY
-
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
         # Get cv2 video capture object
@@ -469,7 +480,8 @@ class VideoPlayer():
         self.vid_len = int(self.vid.get(cv2.CAP_PROP_FRAME_COUNT))/self.vid.get(cv2.CAP_PROP_FPS)
 
         # Separate audio and save
-        audio = VideoFileClip(self.vid_path).audio
+        v = VideoFileClip(self.vid_path)
+        audio = v.audio
         self.hasAudio = True
         if audio == None:
             self.hasAudio = False
@@ -478,11 +490,23 @@ class VideoPlayer():
         if loadAudio:
             print("Preparing Audio...",end="")
             t_start = time.time()
-            audio.write_audiofile("project_audio.mp3",verbose=False,logger=None)
+            audio.write_audiofile("project_audio.mp3",ffmpeg_params=None,verbose=False,logger=None)
             t_end = time.time()
             print("Done [",int(t_end-t_start),"]",sep="")
-        mixer.music.load("project_audio.mp3")
+        try:
+            with open("project_audio.mp3") as f:
+                mp3file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                mixer.music.load(mp3file)
+##            mixer.music.load("project_audio.mp3")
+        except:
+            self.hasAudio = False
+            pass
         self.state = VideoPlayer.State.STOPPED
+        audio.close()
+        v.reader.close()
+        del v.reader
+        del v
+        del audio
 
     def updateDataplayers(self):
         """Update subscribed dataplayer objects"""
@@ -622,7 +646,7 @@ data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\
 
 app = Application()
 #audio = (for debugging)
-audio = app.videoPlayer.loadVideo(vid_path,loadAudio=False)
+audio = app.loadVideo(vid_path,loadAudio=False)
 app.loadData(data_path)
 app.reconfigureChannels(data_path,[True]*4)
 app.play()
