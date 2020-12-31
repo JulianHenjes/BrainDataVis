@@ -186,7 +186,8 @@ class ImportDataWindow():
         self.app.dataPath = xmlpath
         self.app.videoPath = vidpath
         self.root.destroy()
-        self.app.loadVideo(vidpath,loadAudio=not self.loadAudio.get())# Invert Boolean
+        loadAudio = not self.loadAudio.get()
+        self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
         self.app.loadData(xmlpath)
 
 class DataPlayer():
@@ -470,43 +471,47 @@ class VideoPlayer():
         return self.state == VideoPlayer.State.STOPPED
     def isEmpty(self):
         return self.state == VideoPlayer.State.EMPTY
+    def loadAudio(self,path):
+        """Extract Audio From File, Save as MP3, Load"""
+        v = VideoFileClip(path)
+        audio = v.audio
+        self.hasAudio = True
+        if audio == None:
+            self.hasAudio = False
+            return
+        print("Preparing Audio...",end="")
+        t_start = time.time()
+        filename = "project_audio_"+str(int(t_start))+".mp3"
+        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
+        t_end = time.time()
+        print("Done [",int(t_end-t_start),"]",sep="")
+        try:
+            mixer.music.unload()
+            mixer.music.load(filename)
+            mixer.music.play()
+        except:
+            print("[Error]")
+            self.hasAudio = False
+        v.__del__()
+    def loadCachedAudio(self):
+        """Unstable, for testing purposes only"""
+        mixer.music.unload()
+        mixer.music.load("project_audio.mp3")
+
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
+
         # Get cv2 video capture object
         self.vid_path = path
         self.vid = cv2.VideoCapture(self.vid_path)
         self.delay = int(1000/self.vid.get(cv2.CAP_PROP_FPS))
         self.hasAudio = True# If no audio in video, ignore audio
         self.vid_len = int(self.vid.get(cv2.CAP_PROP_FRAME_COUNT))/self.vid.get(cv2.CAP_PROP_FPS)
-
-        # Separate audio and save
-        v = VideoFileClip(self.vid_path)
-        audio = v.audio
-        self.hasAudio = True
-        if audio == None:
-            self.hasAudio = False
-            return
-
         if loadAudio:
-            print("Preparing Audio...",end="")
-            t_start = time.time()
-            audio.write_audiofile("project_audio.mp3",ffmpeg_params=None,verbose=False,logger=None)
-            t_end = time.time()
-            print("Done [",int(t_end-t_start),"]",sep="")
-        try:
-            with open("project_audio.mp3") as f:
-                mp3file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-                mixer.music.load(mp3file)
-##            mixer.music.load("project_audio.mp3")
-        except:
-            self.hasAudio = False
-            pass
+            self.loadAudio(self.vid_path)
+        else:
+            self.loadCachedAudio()
         self.state = VideoPlayer.State.STOPPED
-        audio.close()
-        v.reader.close()
-        del v.reader
-        del v
-        del audio
 
     def updateDataplayers(self):
         """Update subscribed dataplayer objects"""
@@ -592,6 +597,7 @@ class VideoPlayer():
                 mixer.music.pause()
         elif seconds < self.vid_len:
             if not mixer.music.get_busy():
+                mixer.music.play()
                 self.play()
         
         # Set frame number
