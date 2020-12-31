@@ -454,6 +454,7 @@ class VideoPlayer():
         
         # Video
         self.vid_path = ""
+        self.aud_path = ""
         self.vid = None
         self.vid_len = 0
 
@@ -482,17 +483,16 @@ class VideoPlayer():
         print("Preparing Audio...",end="")
         t_start = time.time()
         filename = "project_audio_"+str(int(t_start))+".mp3"
+        self.aud_path = filename
         audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
         t_end = time.time()
         print("Done [",int(t_end-t_start),"]",sep="")
         try:
             mixer.music.unload()
             mixer.music.load(filename)
-            mixer.music.play()
         except:
             print("[Error]")
             self.hasAudio = False
-        v.__del__()
     def loadCachedAudio(self):
         """Unstable, for testing purposes only"""
         mixer.music.unload()
@@ -500,7 +500,7 @@ class VideoPlayer():
 
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
-
+        self.aud_path = ""
         # Get cv2 video capture object
         self.vid_path = path
         self.vid = cv2.VideoCapture(self.vid_path)
@@ -534,7 +534,8 @@ class VideoPlayer():
         # If pause -> play, set progress and resume
         elif self.isPaused():
             if self.hasAudio:
-                mixer.music.load("project_audio.mp3")
+                mixer.music.unload()
+                mixer.music.load(self.aud_path)
             self.seek(self.progress)
             return
         self.state = VideoPlayer.State.PLAYING
@@ -648,7 +649,7 @@ vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 
-##qa_test()
+qa_test()
 
 app = Application()
 #audio = (for debugging)
