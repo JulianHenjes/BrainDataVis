@@ -382,3 +382,61 @@ Dec-31-2020
 		A M 572:4->579 VideoPlayer.stop - 3
 		A M 581:4->585 VideoPlayer.setBlackFrame - 1
 		B M 587:4->625 VideoPlayer.stream - 7
+Jan-02-2021
+	General Analysis
+		Module(loc=698, lloc=546, sloc=494, comments=133, multi=2, blank=80, single_comments=122)
+	Cyclomatic Complexity
+		A F 662:0->674 qa_test - 2
+		A C 35:0->166 Application - 3
+		A M 38:4->61 Application.__init__ - 2
+		A M 63:4->66 Application.launchImportWindow - 1
+		A M 68:4->71 Application.launchSyncToolWindow - 1
+		B M 73:4->94 Application.reconfigureChannels - 6
+		A M 96:4->101 Application.loadData - 2
+		A M 103:4->106 Application.loadVideo - 1
+		A M 108:4->114 Application.play - 2
+		A M 116:4->122 Application.pause - 2
+		A M 124:4->130 Application.stop - 2
+		A M 132:4->139 Application.zoom - 3
+		A M 141:4->150 Application.skipFor - 2
+		A M 152:4->161 Application.bindHotkeys - 2
+		A M 163:4->166 Application.mainloop - 1
+		A C 168:0->198 ImportDataWindow - 2
+		A M 169:4->188 ImportDataWindow.__init__ - 1
+		A M 189:4->198 ImportDataWindow.onSubmit - 1
+		A C 200:0->225 SyncToolWindow - 3
+		A M 201:4->215 SyncToolWindow.__init__ - 1
+		A M 216:4->225 SyncToolWindow.onSubmit - 2
+		A C 227:0->456 DataPlayer - 3
+		A M 228:4->258 DataPlayer.__init__ - 1
+		A M 260:4->263 DataPlayer.clear - 1
+		B M 265:4->287 DataPlayer.zoom - 6
+		A M 289:4->295 DataPlayer.plot - 1
+		A M 297:4->310 DataPlayer.drawScrubber - 5
+		A M 312:4->338 DataPlayer.update - 4
+		A M 340:4->350 DataPlayer.seek - 1
+		A M 352:4->354 DataPlayer.bindSeek - 1
+		A M 356:4->358 DataPlayer.bindZoom - 1
+		A M 360:4->362 DataPlayer.unbind - 1
+		A M 364:4->368 DataPlayer.setScaleX - 1
+		A M 370:4->372 DataPlayer.setScaleY - 1
+		B M 374:4->396 DataPlayer.loadData - 6
+		A M 397:4->402 DataPlayer.getData - 2
+		A M 403:4->422 DataPlayer.drawLayout - 3
+		B M 423:4->456 DataPlayer.draw - 8
+		A C 460:0->659 VideoPlayer - 3
+		A M 470:4->498 VideoPlayer.__init__ - 1
+		A M 500:4->501 VideoPlayer.isPlaying - 1
+		A M 502:4->503 VideoPlayer.isPaused - 1
+		A M 504:4->505 VideoPlayer.isStopped - 1
+		A M 506:4->507 VideoPlayer.isEmpty - 1
+		A M 508:4->528 VideoPlayer.loadAudio - 3
+		A M 529:4->533 VideoPlayer.loadCachedAudio - 1
+		A M 535:4->548 VideoPlayer.loadVideo - 2
+		A M 550:4->556 VideoPlayer.updateDataplayers - 3
+		B M 558:4->576 VideoPlayer.play - 7
+		B M 578:4->593 VideoPlayer.seek - 6
+		A M 595:4->604 VideoPlayer.pause - 3
+		A M 606:4->613 VideoPlayer.stop - 3
+		A M 615:4->619 VideoPlayer.setBlackFrame - 1
+		B M 621:4->659 VideoPlayer.stream - 7
