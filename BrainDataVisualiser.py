@@ -30,7 +30,14 @@ from radon.complexity import cc_rank, cc_visit
 # Colour blind colours
 RED = "#D55F00"# Vermillion
 BLUE = "#0072B2"# Blue
-
+# Help Text
+HELP = \
+"""Controls
+p\t\tPlay
+s\t\tPause
+x\t\tStop
+LeftMB\t\tSeek
+"""
 
 class Application():
     """Class for Application Window"""
@@ -47,6 +54,7 @@ class Application():
         filemenu = tk.Menu(menubar,tearoff=False)
         filemenu.add_command(label="Edit Video/fNIRS Sources",command=self.launchImportWindow)
         filemenu.add_command(label="Synchronise Video/fNIRS",command=self.launchSyncToolWindow)
+        filemenu.add_command(label="Help",command=self.launchHelpWindow)
         filemenu.add_command(label="Quit",command=self.quit)
         menubar.add_cascade(label="Project",menu=filemenu)
         
@@ -60,6 +68,18 @@ class Application():
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
+
+    def launchHelpWindow(self):
+        """Create a Window to Display Help"""
+        self.popup("Help",HELP,geom="350x160")
+
+    def popup(self,title,text,geom="400x200"):
+        """Create a Simple Popup"""
+        self.w = tk.Toplevel()
+        self.w.title(title)
+        self.w.geometry(geom)
+        tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
+        tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0)
 
     def quit(self):
         self.videoPlayer.stop()
@@ -245,7 +265,6 @@ class SyncToolWindow():
         # Redraw Dataplayers to Immediately Update Colour Scheme
         for dp in self.app.dataPlayers:
             dp.draw()
-
 
 class DataPlayer():
     def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
