@@ -47,10 +47,11 @@ class Application():
         filemenu = tk.Menu(menubar,tearoff=False)
         filemenu.add_command(label="Edit Video/fNIRS Sources",command=self.launchImportWindow)
         filemenu.add_command(label="Synchronise Video/fNIRS",command=self.launchSyncToolWindow)
+        filemenu.add_command(label="Quit",command=self.quit)
         menubar.add_cascade(label="Project",menu=filemenu)
         
-
         self.dataOffset = 0# Offset at which video is played relative to data
+        self.colBlindMode = 1# Colour blind mode
         self.controlLock = threading.Lock()
         self.dataPath = ""
         self.videoPath = ""
@@ -59,6 +60,10 @@ class Application():
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
+
+    def quit(self):
+        self.videoPlayer.stop()
+        self.root.destroy()
 
     def launchImportWindow(self):
         """Launches the Data Importing Interface"""
@@ -212,17 +217,35 @@ class SyncToolWindow():
         self.offsetEntry.insert(0,self.app.dataOffset)
         self.errLabel = tk.Label(self.root,fg=RED,text="")
         self.errLabel.grid(row=2,column=0)
-        self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=3,column=0,sticky=tk.NW)
+        self.colblindFriendly = tk.IntVar()
+        colBlindCheck = tk.Checkbutton(self.root,text="Colourblind Mode",variable=self.colblindFriendly)
+        colBlindCheck.grid(row=3,column=0,sticky=tk.NW)
+        if self.app.colBlindMode:
+            colBlindCheck.select()
+        self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=4,column=0,sticky=tk.NW)
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
+        global RED, BLUE
         offset = self.offsetEntry.get()
         try:
             offset = float(offset)
-        except:
+        except:# Display Error for Erroneous Input and Abort
             self.errLabel.config(text="Invalid Input!")
             return
         self.app.dataOffset = offset
         self.root.destroy()
+        colblind = self.colblindFriendly.get()
+        self.app.colBlindMode = colblind
+        if colblind:# Set Colourscheme
+            RED = "#D55F00"
+            BLUE = "#0072B2"
+        else:
+            RED = "#ff0000"
+            BLUE = "#0000ff"
+        # Redraw Dataplayers to Immediately Update Colour Scheme
+        for dp in self.app.dataPlayers:
+            dp.draw()
+
 
 class DataPlayer():
     def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
