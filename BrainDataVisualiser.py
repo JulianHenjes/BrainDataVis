@@ -65,6 +65,7 @@ class Application():
         self.videoPath = ""
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
+        self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
@@ -110,17 +111,20 @@ class Application():
             for j in [0,1]:# For Oxy- and Deoxy-Haemoglobin Channels
                 if channels[i+j]:# If Channel set to display
                     sensor_ids.append(i+j)
-            if channels[i]:# If visible flag set to true
+            if len(sensor_ids):# If visible part
                 # Create a dataplayer with configured sensors
-                self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=[i,i+1]))
-                i += 2# TODO
+                self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=sensor_ids))
+            i += 2
         # Shallow copy array
         self.videoPlayer.dataplayers = self.dataPlayers[:]
-        self.loadData(dataPath)# Load data into dataplayers
+        self.loadData(dataPath,resetChannelSelector=False)# Load data into dataplayers
+        self.bindDPHotkeys()
 
-    def loadData(self,dataPath):
+    def loadData(self,dataPath,resetChannelSelector=True):
         """Load fNIRS data from path"""
         self.dataPath = dataPath
+        if resetChannelSelector:
+            self.channelSelector.loadData(dataPath)
         for dp in self.dataPlayers:
             dp.loadData(dataPath)
             dp.draw()
@@ -181,6 +185,10 @@ class Application():
         self.root.bind("x",self.stop)
         self.root.bind("<Right>",lambda event, t=10: self.skipFor(event,t=t))
         self.root.bind("<Left>",lambda event, t=-10: self.skipFor(event,t=t))
+        self.bindDPHotkeys()
+
+    def bindDPHotkeys(self):
+        """Bind Dataplayer Hotkeys"""
         for dp in self.dataPlayers:
             dp.bindSeek()
             dp.bindZoom()
@@ -266,7 +274,50 @@ class SyncToolWindow():
         for dp in self.app.dataPlayers:
             dp.draw()
 
+class ChannelSelector():
+    """fNIRS Data Channel Selection Widget"""
+    ROWS = 16# Number of Checkbuttons Per Column
+
+    def __init__(self,root,app,row=0,column=0):
+        """"Initialises the Channel Selector"""
+        # tkinter info
+        self.root = root
+        self.app = app
+        # Frame for Layout
+        self.frame = tk.Frame(self.root,borderwidth=1,relief=tk.GROOVE)
+        self.frame.grid(row=row,column=column,sticky=tk.NW)
+        # Checkbutton Widgets
+        self.checks = []# tk.Checkbutton instances
+        self.intvars = []# tk.IntVar instances
+    def loadData(self,filepath):
+        """Initialises Checkbuttons with Sensor Names"""
+        self.removeCheckbuttons()
+        self.tree = ET.parse(filepath)# Parse xml Tree
+        self.data = self.tree.getroot().find("data")# Find Data
+        self.sensors = [i.text for i in self.tree.getroot().find('columns')]# Get Sensor Names
+        for s in self.sensors:# Add Each Sensor as Option
+            self.addOption(s)
+    def removeCheckbuttons(self):
+        """Remove all Checkbuttons"""
+        for cb in self.checks:
+            cb.destroy()
+        self.intvars = []
+    def addOption(self,text):
+        """Add a Checkbutton and Option to Widget"""
+        self.intvars.append(tk.IntVar())
+        self.checks.append(tk.Checkbutton(self.frame,text=text,variable=self.intvars[-1],command=self.onClickCheckbutton))
+        self.checks[-1].grid(row=(len(self.checks)-1)%self.ROWS,column=(len(self.checks)-1)//self.ROWS,sticky=tk.NW)# Format Neatly
+    def onClickCheckbutton(self):
+        """Rearrange DataPlayers to New Configuration"""
+        mask = []
+        for val in self.intvars:
+            mask.append(val.get())
+        # Recreate fNIRS Channels with channel mask
+        self.app.reconfigureChannels(self.app.dataPath,mask)
+
 class DataPlayer():
+    """fNIRS Data Player Widget"""
+
     def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
         """Initialises data player"""
 
@@ -277,7 +328,7 @@ class DataPlayer():
         
         # Create canvas widget
         self.c = tk.Canvas(self.root,width=self.w,height=self.h,bg='#ffffff')
-        self.c.grid(row=row,column=column,sticky=tk.NW)
+        self.c.grid(row=row,column=column,sticky=tk.NW,columnspan=2)
 
         # Start and end of x scale (seconds)
         self.scalex = [0,1]
@@ -500,7 +551,7 @@ class DataPlayer():
 
 
 class VideoPlayer():
-    """Class for Video Player Widget"""
+    """Video Player Widget"""
 
     class State(Enum):
         """Nested Inner Class for Video Player States"""
