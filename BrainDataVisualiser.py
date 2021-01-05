@@ -6,7 +6,7 @@
 # cv2
 # numpy
 # pygame
-# radon
+# radon - For Quality Assurance Metrics Only
 
 import tkinter as tk
 from PIL import ImageTk, Image
@@ -30,7 +30,14 @@ from radon.complexity import cc_rank, cc_visit
 # Colour blind colours
 RED = "#D55F00"# Vermillion
 BLUE = "#0072B2"# Blue
-
+# Help Text
+HELP = \
+"""Controls
+p\t\tPlay
+s\t\tPause
+x\t\tStop
+LeftMB\t\tSeek
+"""
 
 class Application():
     """Class for Application Window"""
@@ -45,23 +52,49 @@ class Application():
         menubar = tk.Menu(tearoff=False)
         self.root.config(menu=menubar)
         filemenu = tk.Menu(menubar,tearoff=False)
-        filemenu.add_command(label="Project Configuration",command=self.launchImportWindow)
-        menubar.add_cascade(label="File",menu=filemenu)
-
+        filemenu.add_command(label="Edit Video/fNIRS Sources",command=self.launchImportWindow)
+        filemenu.add_command(label="Synchronise Video/fNIRS",command=self.launchSyncToolWindow)
+        filemenu.add_command(label="Help",command=self.launchHelpWindow)
+        filemenu.add_command(label="Quit",command=self.quit)
+        menubar.add_cascade(label="Project",menu=filemenu)
+        
         self.dataOffset = 0# Offset at which video is played relative to data
+        self.colBlindMode = 1# Colour blind mode
         self.controlLock = threading.Lock()
         self.dataPath = ""
         self.videoPath = ""
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
+        self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
         for dp in self.dataPlayers:
             self.videoPlayer.dataplayers.append(dp)
 
+    def launchHelpWindow(self):
+        """Create a Window to Display Help"""
+        self.popup("Help",HELP,geom="350x160")
+
+    def popup(self,title,text,geom="400x200"):
+        """Create a Simple Popup"""
+        self.w = tk.Toplevel()
+        self.w.title(title)
+        self.w.geometry(geom)
+        tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
+        tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0)
+
+    def quit(self):
+        self.videoPlayer.stop()
+        self.root.destroy()
+
     def launchImportWindow(self):
         """Launches the Data Importing Interface"""
         self.videoPlayer.stop()
-        self.w = ImportDataWindow(self)
+        self.w_import = ImportDataWindow(self)
+
+    def launchSyncToolWindow(self):
+        """Launches the Sync Tool Window"""
+        self.videoPlayer.stop()
+        self.w_synctool = SyncToolWindow(self)
 
     def reconfigureChannels(self,dataPath,channels):
         """Given dataPath to xml fNIRS file, and a boolean mask (channels),
@@ -78,17 +111,20 @@ class Application():
             for j in [0,1]:# For Oxy- and Deoxy-Haemoglobin Channels
                 if channels[i+j]:# If Channel set to display
                     sensor_ids.append(i+j)
-            if channels[i]:# If visible flag set to true
+            if len(sensor_ids):# If visible part
                 # Create a dataplayer with configured sensors
-                self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=[i,i+1]))
-                i += 2# TODO
+                self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=sensor_ids))
+            i += 2
         # Shallow copy array
         self.videoPlayer.dataplayers = self.dataPlayers[:]
-        self.loadData(dataPath)# Load data into dataplayers
+        self.loadData(dataPath,resetChannelSelector=False)# Load data into dataplayers
+        self.bindDPHotkeys()
 
-    def loadData(self,dataPath):
+    def loadData(self,dataPath,resetChannelSelector=True):
         """Load fNIRS data from path"""
         self.dataPath = dataPath
+        if resetChannelSelector:
+            self.channelSelector.loadData(dataPath)
         for dp in self.dataPlayers:
             dp.loadData(dataPath)
             dp.draw()
@@ -149,6 +185,10 @@ class Application():
         self.root.bind("x",self.stop)
         self.root.bind("<Right>",lambda event, t=10: self.skipFor(event,t=t))
         self.root.bind("<Left>",lambda event, t=-10: self.skipFor(event,t=t))
+        self.bindDPHotkeys()
+
+    def bindDPHotkeys(self):
+        """Bind Dataplayer Hotkeys"""
         for dp in self.dataPlayers:
             dp.bindSeek()
             dp.bindZoom()
@@ -172,7 +212,7 @@ class ImportDataWindow():
         self.vidPathEntry.grid(row=1,column=0,sticky=tk.NW)
         self.vidPathEntry.insert(tk.END,self.app.videoPath)
         self.loadAudio = tk.IntVar()
-        tk.Checkbutton(self.root,text="Use Cached Audio",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
+        tk.Checkbutton(self.root,text="Use Cached Audio [EXPERIMENTAL]",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
         tk.Label(self.root,text="File Path to fNIRS (.xml) Data: ").grid(row=3,column=0,sticky=tk.NW)
         self.fnirsPathEntry = tk.Entry(self.root,width=120)
         self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW)
@@ -190,7 +230,93 @@ class ImportDataWindow():
         self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
         self.app.loadData(xmlpath)
 
+class SyncToolWindow():
+    def __init__(self,app):
+        """Create a Window for inputting a Video-Data Synchronisation Offset"""
+        # Keep Reference to Main Window
+        self.app = app
+        self.root = tk.Toplevel()
+        self.root.title("Set Sync Offset")
+        self.root.geometry("750x200")
+        # Create, Grid, and Bind Widgets
+        tk.Label(self.root,text="fNIRS Data Offset (s):").grid(row=0,column=0)
+        self.offsetEntry = tk.Entry(self.root)
+        self.offsetEntry.grid(row=1,column=0,sticky=tk.NW)
+        self.offsetEntry.insert(0,self.app.dataOffset)
+        self.errLabel = tk.Label(self.root,fg=RED,text="")
+        self.errLabel.grid(row=2,column=0)
+        self.colblindFriendly = tk.IntVar()
+        colBlindCheck = tk.Checkbutton(self.root,text="Colourblind Mode",variable=self.colblindFriendly)
+        colBlindCheck.grid(row=3,column=0,sticky=tk.NW)
+        if self.app.colBlindMode:
+            colBlindCheck.select()
+        self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=4,column=0,sticky=tk.NW)
+    def onSubmit(self):
+        """Called when Submit Button is Pressed"""
+        global RED, BLUE
+        offset = self.offsetEntry.get()
+        try:
+            offset = float(offset)
+        except:# Display Error for Erroneous Input and Abort
+            self.errLabel.config(text="Invalid Input!")
+            return
+        self.app.dataOffset = offset
+        self.root.destroy()
+        colblind = self.colblindFriendly.get()
+        self.app.colBlindMode = colblind
+        if colblind:# Set Colourscheme
+            RED = "#D55F00"
+            BLUE = "#0072B2"
+        else:
+            RED = "#ff0000"
+            BLUE = "#0000ff"
+        # Redraw Dataplayers to Immediately Update Colour Scheme
+        for dp in self.app.dataPlayers:
+            dp.draw()
+
+class ChannelSelector():
+    """fNIRS Data Channel Selection Widget"""
+    ROWS = 16# Number of Checkbuttons Per Column
+
+    def __init__(self,root,app,row=0,column=0):
+        """"Initialises the Channel Selector"""
+        # tkinter info
+        self.root = root
+        self.app = app
+        # Frame for Layout
+        self.frame = tk.Frame(self.root,borderwidth=1,relief=tk.GROOVE)
+        self.frame.grid(row=row,column=column,sticky=tk.NW)
+        # Checkbutton Widgets
+        self.checks = []# tk.Checkbutton instances
+        self.intvars = []# tk.IntVar instances
+    def loadData(self,filepath):
+        """Initialises Checkbuttons with Sensor Names"""
+        self.removeCheckbuttons()
+        self.tree = ET.parse(filepath)# Parse xml Tree
+        self.data = self.tree.getroot().find("data")# Find Data
+        self.sensors = [i.text for i in self.tree.getroot().find('columns')]# Get Sensor Names
+        for s in self.sensors:# Add Each Sensor as Option
+            self.addOption(s)
+    def removeCheckbuttons(self):
+        """Remove all Checkbuttons"""
+        for cb in self.checks:
+            cb.destroy()
+        self.intvars = []
+    def addOption(self,text):
+        """Add a Checkbutton and Option to Widget"""
+        self.intvars.append(tk.IntVar())
+        self.checks.append(tk.Checkbutton(self.frame,text=text,variable=self.intvars[-1],command=self.onClickCheckbutton))
+        self.checks[-1].grid(row=(len(self.checks)-1)%self.ROWS,column=(len(self.checks)-1)//self.ROWS,sticky=tk.NW)# Format Neatly
+    def onClickCheckbutton(self):
+        """Rearrange DataPlayers to New Configuration"""
+        mask = []
+        for val in self.intvars:
+            mask.append(val.get())
+        # Recreate fNIRS Channels with channel mask
+        self.app.reconfigureChannels(self.app.dataPath,mask)
+
 class DataPlayer():
+    """fNIRS Data Player Widget"""
 
     def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
         """Initialises data player"""
@@ -202,7 +328,7 @@ class DataPlayer():
         
         # Create canvas widget
         self.c = tk.Canvas(self.root,width=self.w,height=self.h,bg='#ffffff')
-        self.c.grid(row=row,column=column,sticky=tk.NW)
+        self.c.grid(row=row,column=column,sticky=tk.NW,columnspan=2)
 
         # Start and end of x scale (seconds)
         self.scalex = [0,1]
@@ -425,7 +551,7 @@ class DataPlayer():
 
 
 class VideoPlayer():
-    """Class for Video Player Widget"""
+    """Video Player Widget"""
 
     class State(Enum):
         """Nested Inner Class for Video Player States"""
@@ -495,6 +621,7 @@ class VideoPlayer():
             self.hasAudio = False
     def loadCachedAudio(self):
         """Unstable, for testing purposes only"""
+        self.aud_path = "project_audio.mp3"
         mixer.music.unload()
         mixer.music.load("project_audio.mp3")
 
@@ -649,7 +776,7 @@ vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 
-qa_test()
+##qa_test()
 
 app = Application()
 #audio = (for debugging)
