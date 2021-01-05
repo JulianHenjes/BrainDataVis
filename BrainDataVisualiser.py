@@ -83,16 +83,19 @@ class Application():
         tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0)
 
     def quit(self):
+        self.unbind()
         self.videoPlayer.stop()
         self.root.destroy()
 
     def launchImportWindow(self):
         """Launches the Data Importing Interface"""
+        self.unbind()
         self.videoPlayer.stop()
         self.w_import = ImportDataWindow(self)
 
     def launchSyncToolWindow(self):
         """Launches the Sync Tool Window"""
+        self.unbind()
         self.videoPlayer.stop()
         self.w_synctool = SyncToolWindow(self)
 
@@ -187,6 +190,12 @@ class Application():
         self.root.bind("<Left>",lambda event, t=-10: self.skipFor(event,t=t))
         self.bindDPHotkeys()
 
+    def unbind(self):
+        for k in ["s","p","x","<Right>","<Left>"]:
+            self.root.unbind(k)
+        for dp in self.dataPlayers:
+            dp.unbind()
+
     def bindDPHotkeys(self):
         """Bind Dataplayer Hotkeys"""
         for dp in self.dataPlayers:
@@ -229,6 +238,7 @@ class ImportDataWindow():
         loadAudio = not self.loadAudio.get()
         self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
         self.app.loadData(xmlpath)
+        self.app.bindHotkeys()
 
 class SyncToolWindow():
     def __init__(self,app):
@@ -273,6 +283,7 @@ class SyncToolWindow():
         # Redraw Dataplayers to Immediately Update Colour Scheme
         for dp in self.app.dataPlayers:
             dp.draw()
+        self.app.bindHotkeys()
 
 class ChannelSelector():
     """fNIRS Data Channel Selection Widget"""
