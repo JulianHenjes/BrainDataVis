@@ -451,6 +451,9 @@ class DataPlayer():
 
     def seek(self,event):
         """Seek to where the user clicked"""
+        if self.app.controlLock.locked():
+            return
+        self.app.controlLock.acquire()
         x = event.x
         scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Get x scale in seconds
         seekTo = (x/self.w) * (scalex_secs[1]-scalex_secs[0]) + scalex_secs[0]# Transform pixel coordinates to represented time
@@ -460,6 +463,7 @@ class DataPlayer():
         self.update(self.app.videoPlayer.startTimestamp)
         self.draw()
         self.app.videoPlayer.play()
+        self.app.controlLock.release()
 
     def bindSeek(self):
         """Bind button press on this widget to seeking behaviour"""
