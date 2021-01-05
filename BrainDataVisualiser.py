@@ -80,10 +80,12 @@ class Application():
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
+        self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
         tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
         tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0)
 
     def quit(self):
+        """Called when main root closed or quit via menubar"""
         self.unbind()
         self.videoPlayer.stop()
         self.root.destroy()
@@ -99,7 +101,7 @@ class Application():
         self.unbind()
         self.videoPlayer.stop()
         self.w_synctool = SyncToolWindow(self)
-
+        
     def reconfigureChannels(self,dataPath,channels):
         """Given dataPath to xml fNIRS file, and a boolean mask (channels),
             destroy and recreate all necessary data players"""
@@ -228,6 +230,7 @@ class ImportDataWindow():
         self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW)
         self.fnirsPathEntry.insert(tk.END,self.app.dataPath)
         self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW)
+        self.root.protocol("WM_DELETE_WINDOW",self.app.bindHotkeys)
         self.root.mainloop()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
@@ -262,6 +265,8 @@ class SyncToolWindow():
         if self.app.colBlindMode:
             colBlindCheck.select()
         self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=4,column=0,sticky=tk.NW)
+        self.root.protocol("WM_DELETE_WINDOW",self.app.bindHotkeys)
+        self.root.mainloop()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
         global RED, BLUE
@@ -321,11 +326,13 @@ class ChannelSelector():
         self.checks[-1].grid(row=(len(self.checks)-1)%self.ROWS,column=(len(self.checks)-1)//self.ROWS,sticky=tk.NW)# Format Neatly
     def onClickCheckbutton(self):
         """Rearrange DataPlayers to New Configuration"""
+        self.app.unbind()
         mask = []
         for val in self.intvars:
             mask.append(val.get())
         # Recreate fNIRS Channels with channel mask
         self.app.reconfigureChannels(self.app.dataPath,mask)
+        self.app.bindHotkeys()
 
 class DataPlayer():
     """fNIRS Data Player Widget"""
@@ -340,7 +347,7 @@ class DataPlayer():
         
         # Create canvas widget
         self.c = tk.Canvas(self.root,width=self.w,height=self.h,bg='#ffffff')
-        self.c.grid(row=row,column=column,sticky=tk.NW,columnspan=2)
+        self.c.grid(row=row,column=column,sticky=tk.NW,columnspan=100)
 
         # Start and end of x scale (seconds)
         self.scalex = [0,1]
@@ -427,7 +434,7 @@ class DataPlayer():
         scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Start and end of plot, in seconds
         x = ((elapsedTime-scalex_secs[0])/(scalex_secs[1]-scalex_secs[0]))*self.w
         self.drawScrubber()
-        
+
         # If out of bounds
         if x < 0:# Set canvas x range to 0
             self.scalex[1] -= self.scalex[0]
@@ -435,8 +442,8 @@ class DataPlayer():
             self.draw()# Draw starting strip
         if x > self.w:# Set canvas x range to proceed
             range_ = self.scalex[1] - self.scalex[0]
-            self.scalex[0] += range_
-            self.scalex[1] += range_
+            self.scalex[0] += range_*x/self.w
+            self.scalex[1] += range_*x/self.w
             self.draw()# Draw next strip
             
         # Update the canvas
@@ -618,13 +625,15 @@ class VideoPlayer():
         if audio == None:
             self.hasAudio = False
             return
-        print("Preparing Audio...",end="")
+        print("Preparing Audio",end="")
+        self.app.popup("Video Importer","Preparing Audio, Please Wait")
         t_start = time.time()
         filename = "project_audio_"+str(int(t_start))+".mp3"
         self.aud_path = filename
         audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
         t_end = time.time()
-        print("Done [",int(t_end-t_start),"]",sep="")
+        print("Done[{0}]".format(t_end-t_start))
+        self.app.w.destroy()
         try:
             mixer.music.unload()
             mixer.music.load(filename)
