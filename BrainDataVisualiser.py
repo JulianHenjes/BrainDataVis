@@ -47,6 +47,7 @@ class Application():
         # Create window and set title
         self.root = tk.Tk()
         self.root.title("Brain Data Visualisation Tool")
+        self.root.protocol("WM_DELETE_WINDOW",self.quit)# Stop video player before closing
 
         # Create menubar
         menubar = tk.Menu(tearoff=False)
