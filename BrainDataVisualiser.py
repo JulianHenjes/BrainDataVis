@@ -216,6 +216,7 @@ class ImportDataWindow():
         # Keep Reference to Main Window
         self.app = app
         self.root = tk.Toplevel()
+        self.root.grab_set()
         self.root.title("File")
         self.root.geometry("750x200")
         # Create, Grid, and Bind Widgets
@@ -243,6 +244,7 @@ class ImportDataWindow():
         self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
         self.app.loadData(xmlpath)
         self.app.bindHotkeys()
+        self.root.grab_release()
 
 class SyncToolWindow():
     def __init__(self,app):
@@ -250,6 +252,7 @@ class SyncToolWindow():
         # Keep Reference to Main Window
         self.app = app
         self.root = tk.Toplevel()
+        self.root.grab_set()
         self.root.title("Set Sync Offset")
         self.root.geometry("750x200")
         # Create, Grid, and Bind Widgets
@@ -290,6 +293,7 @@ class SyncToolWindow():
         for dp in self.app.dataPlayers:
             dp.draw()
         self.app.bindHotkeys()
+        self.root.grab_release()
 
 class ChannelSelector():
     """fNIRS Data Channel Selection Widget"""
@@ -522,8 +526,10 @@ class DataPlayer():
         self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
         if len(self.sensor_ids) == 2:# If displaying blue sensor
             self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
-        # Draw Border
-        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
+        # Draw Border -
+        for coords in [[2,2,self.w,2],[2,self.h,self.w,self.h],[2,2,2,self.h],[self.w,2,self.w,self.h]]:
+            self.c.create_rectangle(coords[0],coords[1],coords[2],coords[3],fill="#000000",width=2)
+##        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
         # Draw X Axis
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
