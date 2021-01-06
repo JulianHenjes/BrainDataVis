@@ -64,6 +64,7 @@ class Application():
         self.controlLock = threading.Lock()
         self.dataPath = ""
         self.videoPath = ""
+        self.data = None # fNIRS data
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
         self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
@@ -129,10 +130,11 @@ class Application():
     def loadData(self,dataPath,resetChannelSelector=True):
         """Load fNIRS data from path"""
         self.dataPath = dataPath
+        self.loadFNIRS(dataPath)
         if resetChannelSelector:
             self.channelSelector.loadData(dataPath)
         for dp in self.dataPlayers:
-            dp.loadData(dataPath)
+            dp.loadData()
             dp.draw()
 
     def loadVideo(self,path,loadAudio=False):
@@ -209,6 +211,16 @@ class Application():
         """Hand over control to GUI loop"""
         self.bindHotkeys()
         self.root.mainloop()
+
+    def loadFNIRS(self,filepath):
+        """Load fNIRS data from .xml file into app"""
+        self.tree = ET.parse(filepath)
+        self.data = self.tree.getroot().find("data")
+        self.samplerate = float(self.tree.getroot().find('device').find('samplerate').text)
+        self.sensors = [i.text for i in self.tree.getroot().find('columns')]
+        self.sensorMask = [True]*len(self.sensors)
+        self.measurements = len(self.tree.getroot().find('data'))
+
 
 class ImportDataWindow():
     def __init__(self,app):
@@ -360,7 +372,6 @@ class DataPlayer():
         self.scaleLock = threading.Lock()
 
         # Member variables associate to currently loaded xml file
-        self.data = None# fNIRS xml data
         self.samplerate = 1# Device Sample Rate (Hz)
         self.sensors = None# List of sensor names
         self.sensorMask = None# Boolean mask for which sensors outputs to draw
@@ -491,33 +502,30 @@ class DataPlayer():
         """Set y scale, one number representing the max value either side of 0"""
         self.scaley = [starty,endy]
 
-    def loadData(self,filepath):
-        """Load fNIRS data from .xml file"""
-        self.tree = ET.parse(filepath)
-        self.data = self.tree.getroot().find("data")
-        #self.data[ <sample> ][ <sensor_num> ]
-        
-        self.samplerate = float(self.tree.getroot().find('device').find('samplerate').text)
-        self.sensors = [i.text for i in self.tree.getroot().find('columns')]
-        self.sensorMask = [True]*len(self.sensors)
-        self.measurements = len(self.tree.getroot().find('data'))
+    def loadData(self):
+        """Update dataplayer with data stored in app"""
+        self.samplerate = self.app.samplerate
+        self.sensors = self.app.sensors
+        self.sensorMask = self.app.sensorMask
+        self.measurements = self.app.measurements
 
         # Get min and max data points
         for sens in self.sensor_ids:
             for i in range(1,self.measurements):
-                if float(self.data[i][sens].text) < self.sensor_range[0]:
-                    self.sensor_range[0] = float(self.data[i][sens].text)
-                elif float(self.data[i][sens].text) > self.sensor_range[1]:
-                    self.sensor_range[1] = float(self.data[i][sens].text)
+                if float(self.app.data[i][sens].text) < self.sensor_range[0]:
+                    self.sensor_range[0] = float(self.app.data[i][sens].text)
+                elif float(self.app.data[i][sens].text) > self.sensor_range[1]:
+                    self.sensor_range[1] = float(self.app.data[i][sens].text)
+        
         # Set x scale from 0 to end of track
-##        self.scalex = [0,self.measurements]
-        self.scalex = [0,self.w/2]
+        self.scalex = [0,self.measurements]
+##        self.scalex = [0,self.w/2]
         # Set y scale to maximum sensor measurement
         self.setScaleY(self.sensor_range[0], self.sensor_range[1])
     def getData(self,sensor_id,t):
         """Get data from sensor at time t"""
         try:
-            return round(float(self.data[int(t*self.samplerate)][sensor_id].text),3)
+            return round(float(self.app.data[int(t*self.samplerate)][sensor_id].text),3)
         except:# No data loaded, or scrubber out of bounds
             return 0
     def drawLayout(self):
@@ -544,38 +552,41 @@ class DataPlayer():
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
     def draw(self):
         """Draw braindata to canvas, with respect to fNIRS metadata and zoom"""
-        self.clear()
-        if self.data == None:# If no data, break
+        try:
+            self.clear()
+            if self.app.data == None:# If no data, break
+                return
+            # How much each pixel represents
+            if self.scalex[1]-self.scalex[0] == 0:
+                return
+            step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
+            # Draw Graph Background
+            self.drawLayout()
+            sens_index = [0]# If one sensor displayed in this data player
+            if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
+                sens_index = [1,0]# Draw order blue then red to make blue line on top
+            for s in sens_index:
+                i = self.scalex[0]
+                x = 0
+                while i < self.scalex[1]:
+                    i += step# i Is data
+                    x += 1# x is iteration/pixel-coordinate
+                    if i<0:# Skip data for t<0
+                        continue
+                    try:
+                        # Data retrieved from xml
+                        y = float(self.app.data[int(i)][self.sensor_ids[s]].text)
+                        y2 = float(self.app.data[int(i+step)][self.sensor_ids[s]].text)
+                        # Normalize into range 0 to 1 and multiply by height
+                        y = ((y-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
+                        y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
+                    except IndexError:# Missing data is skipped
+                        continue
+                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s],width=2)
+            self.drawScrubber()
+            self.c.update()
+        except tk.TclError:# If canvas destroyed, cancel draw operation
             return
-        # How much each pixel represents
-        if self.scalex[1]-self.scalex[0] == 0:
-            return
-        step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
-        # Draw Graph Background
-        self.drawLayout()
-        sens_index = [0]# If one sensor displayed in this data player
-        if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
-            sens_index = [1,0]# Draw order blue then red to make blue line on top
-        for s in sens_index:
-            i = self.scalex[0]
-            x = 0
-            while i < self.scalex[1]:
-                i += step# i Is data
-                x += 1# x is iteration/pixel-coordinate
-                if i<0:# Skip data for t<0
-                    continue
-                try:
-                    # Data retrieved from xml
-                    y = float(self.data[int(i)][self.sensor_ids[s]].text)
-                    y2 = float(self.data[int(i+step)][self.sensor_ids[s]].text)
-                    # Normalize into range 0 to 1 and multiply by height
-                    y = ((y-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
-                    y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
-                except IndexError:# Missing data is skipped
-                    continue
-                self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s],width=2)
-        self.drawScrubber()
-        self.c.update()
         
 
 
