@@ -76,14 +76,15 @@ class Application():
         """Create a Window to Display Help"""
         self.popup("Help",HELP,geom="350x160")
 
-    def popup(self,title,text,geom="400x200"):
+    def popup(self,title,text,geom="300x100"):
         """Create a Simple Popup"""
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
         self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
         tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
-        tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0)
+        tk.Button(self.w,text="Ok",command=self.w.quit).grid(row=1,column=0,sticky=tk.S)
+        self.w.mainloop()
 
     def quit(self):
         """Called when main root closed or quit via menubar"""
@@ -646,15 +647,17 @@ class VideoPlayer():
         if audio == None:
             self.hasAudio = False
             return
-        print("Preparing Audio",end="")
-        self.app.popup("Video Importer","Preparing Audio, Please Wait")
+        print("Preparing Audio...",end="")
+##        self.app.popup("Video Importer","Preparing Audio, Please Wait")
         t_start = time.time()
-        filename = "project_audio_"+str(int(t_start))+".mp3"
+        filename = "project_audio.mp3"#_"+str(int(t_start))+".mp3"
         self.aud_path = filename
-        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
+        v.resize(width=10).write_videofile("project_video.mp4",temp_audiofile="project_audio_test.mp3",remove_temp=False,fps=0.1,logger=None)
+##        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
+##        audio.close()
+        v.close()
         t_end = time.time()
         print("Done[{0}]".format(t_end-t_start))
-        self.app.w.destroy()
         try:
             mixer.music.unload()
             mixer.music.load(filename)
