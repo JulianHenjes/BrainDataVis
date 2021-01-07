@@ -81,9 +81,9 @@ class Application():
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
-        self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
+##        self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
         tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
-        tk.Button(self.w,text="Ok",command=self.w.quit).grid(row=1,column=0,sticky=tk.S)
+        tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0,sticky=tk.S)
         self.w.mainloop()
 
     def quit(self):
@@ -197,6 +197,7 @@ class Application():
         self.bindDPHotkeys()
 
     def unbind(self):
+        """Unbind Hotkeys"""
         for k in ["s","p","x","<Right>","<Left>"]:
             self.root.unbind(k)
         for dp in self.dataPlayers:
@@ -254,10 +255,10 @@ class ImportDataWindow():
         self.app.videoPath = vidpath
         self.root.destroy()
         loadAudio = not self.loadAudio.get()
-        self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
         self.app.loadData(xmlpath)
         self.app.bindHotkeys()
         self.root.grab_release()
+        self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
 
 class SyncToolWindow():
     def __init__(self,app):
@@ -650,25 +651,37 @@ class VideoPlayer():
         print("Preparing Audio...",end="")
 ##        self.app.popup("Video Importer","Preparing Audio, Please Wait")
         t_start = time.time()
-        filename = "project_audio.mp3"#_"+str(int(t_start))+".mp3"
+        filename = os.getcwd()+"project_audio.mp3"#_"+str(int(t_start))+".mp3"
         self.aud_path = filename
-        v.resize(width=10).write_videofile("project_video.mp4",temp_audiofile="project_audio_test.mp3",remove_temp=False,fps=0.1,logger=None)
-##        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
-##        audio.close()
+##        v.resize(width=10).write_videofile(os.getcwd()+"\\temporary_file.mp4",temp_audiofile=filename,remove_temp=False,fps=0.1,logger=None)
+        # Just writing the audio file causes undocumented issues
+        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
+        audio.reader.close_proc()
+        audio.close()
         v.close()
+        if os.path.exists("temporary_file.mp4"):
+            os.remove("temporary_file.mp4")
         t_end = time.time()
-        print("Done[{0}]".format(t_end-t_start))
+        print("Done[{0}]".format(int(t_end-t_start)))
         try:
             mixer.music.unload()
             mixer.music.load(filename)
         except:
             print("[Error]")
             self.hasAudio = False
+        self.app.popup("Audio Importer","Audio Import Complete")
     def loadCachedAudio(self):
         """Unstable, for testing purposes only"""
         self.aud_path = "project_audio.mp3"
         mixer.music.unload()
-        mixer.music.load("project_audio.mp3")
+        print("Loading Cached Audio...")
+        try:
+            mixer.music.load("project_audio.mp3")
+        except:
+            print("Error Loading Cached Audio")
+            mixer.music.unload()
+            self.aud_path = None
+            self.hasAudio = False
 
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
@@ -682,7 +695,6 @@ class VideoPlayer():
         if loadAudio:
             self.loadAudio(self.vid_path)
         else:
-            print("loading cached audio")
             self.loadCachedAudio()
         self.state = VideoPlayer.State.STOPPED
 
@@ -770,7 +782,7 @@ class VideoPlayer():
             if mixer.music.get_busy():
                 mixer.music.pause()
         elif seconds < self.vid_len:
-            if not mixer.music.get_busy():
+            if not mixer.music.get_busy() and self.hasAudio:
                 mixer.music.play()
                 self.play()
         
