@@ -94,13 +94,13 @@ class Application():
     def launchImportWindow(self):
         """Launches the Data Importing Interface"""
         self.unbind()
-        self.videoPlayer.stop()
+        self.videoPlayer.pause()
         self.w_import = ImportDataWindow(self)
 
     def launchSyncToolWindow(self):
         """Launches the Sync Tool Window"""
         self.unbind()
-        self.videoPlayer.stop()
+        self.videoPlayer.pause()
         self.w_synctool = SyncToolWindow(self)
         
     def reconfigureChannels(self,dataPath,channels):
@@ -679,6 +679,7 @@ class VideoPlayer():
         if loadAudio:
             self.loadAudio(self.vid_path)
         else:
+            print("loading cached audio")
             self.loadCachedAudio()
         self.state = VideoPlayer.State.STOPPED
 
