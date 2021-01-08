@@ -1,4 +1,5 @@
 # Python 3.6.2, 64-bit
+# Requires ffmpeg
 # Dependencies:
 # imageio
 # imageio_ffmpeg
@@ -12,7 +13,6 @@ import tkinter as tk
 from PIL import ImageTk, Image
 import cv2
 import numpy as np
-from moviepy.editor import VideoFileClip
 import os
 import threading
 import time
@@ -23,6 +23,7 @@ import datetime
 import threading
 import mmap
 import ffmpeg
+from subprocess import PIPE, run
 # QA Code
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
@@ -239,7 +240,7 @@ class ImportDataWindow():
         self.vidPathEntry.grid(row=1,column=0,sticky=tk.NW)
         self.vidPathEntry.insert(tk.END,self.app.videoPath)
         self.loadAudio = tk.IntVar()
-        tk.Checkbutton(self.root,text="Use Cached Audio [EXPERIMENTAL]",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
+        tk.Checkbutton(self.root,text="Use Cached Audio",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
         tk.Label(self.root,text="File Path to fNIRS (.xml) Data: ").grid(row=3,column=0,sticky=tk.NW)
         self.fnirsPathEntry = tk.Entry(self.root,width=120)
         self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW)
@@ -642,33 +643,34 @@ class VideoPlayer():
         return self.state == VideoPlayer.State.EMPTY
     def loadAudio(self,path):
         """Extract Audio From File, Save as MP3, Load"""
-        v = VideoFileClip(path)
-        audio = v.audio
-        self.hasAudio = True
-        if audio == None:
+        if self.vid:# Release video to access
+            self.vid.release()
+        # Check if has audio
+        mixer.music.unload()
+        command = "ffprobe -i \"{0}\" -show_streams -select_streams a -loglevel error".format(path)
+        result = run(command,stdout=PIPE,stderr=PIPE,universal_newlines=True,shell=True)
+        if result.stdout.startswith("[STREAM]"):# Contains audio
+            self.hasAudio = True
+        else:
             self.hasAudio = False
             return
         print("Preparing Audio...",end="")
-##        self.app.popup("Video Importer","Preparing Audio, Please Wait")
-        t_start = time.time()
-        filename = os.getcwd()+"project_audio.mp3"#_"+str(int(t_start))+".mp3"
+        filename = "project_audio.mp3"
         self.aud_path = filename
-##        v.resize(width=10).write_videofile(os.getcwd()+"\\temporary_file.mp4",temp_audiofile=filename,remove_temp=False,fps=0.1,logger=None)
-        # Just writing the audio file causes undocumented issues
-        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
-        audio.reader.close_proc()
-        audio.close()
-        v.close()
-        if os.path.exists("temporary_file.mp4"):
-            os.remove("temporary_file.mp4")
+        t_start = time.time()
+        # Extract audio using ffmpeg, always overwrite
+        command = "ffmpeg -y -i \"{0}\" \"{1}\"".format(path,filename)
+        result = run(command,stdout=PIPE,stderr=PIPE,universal_newlines=True,shell=True)
+##        print(result.stderr)
         t_end = time.time()
         print("Done[{0}]".format(int(t_end-t_start)))
         try:
             mixer.music.unload()
             mixer.music.load(filename)
         except:
-            print("[Error]")
+            print("Error Loading Audio")
             self.hasAudio = False
+        self.vid = cv2.VideoCapture(self.vid_path)# Reload video component
         self.app.popup("Audio Importer","Audio Import Complete")
     def loadCachedAudio(self):
         """Unstable, for testing purposes only"""
@@ -690,13 +692,13 @@ class VideoPlayer():
         self.vid_path = path
         self.vid = cv2.VideoCapture(self.vid_path)
         self.delay = int(1000/self.vid.get(cv2.CAP_PROP_FPS))
-        self.hasAudio = True# If no audio in video, ignore audio
         self.vid_len = int(self.vid.get(cv2.CAP_PROP_FRAME_COUNT))/self.vid.get(cv2.CAP_PROP_FPS)
+        self.state = VideoPlayer.State.STOPPED
+        self.hasAudio = True# If no audio in video, ignore audio
         if loadAudio:
             self.loadAudio(self.vid_path)
         else:
             self.loadCachedAudio()
-        self.state = VideoPlayer.State.STOPPED
 
     def updateDataplayers(self):
         """Update subscribed dataplayer objects"""
@@ -834,7 +836,7 @@ vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 
-##qa_test()
+qa_test()
 
 app = Application()
 #audio = (for debugging)
