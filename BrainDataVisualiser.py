@@ -14,7 +14,6 @@ from PIL import ImageTk, Image
 import cv2
 import numpy as np
 import os
-import threading
 import time
 import pygame.mixer as mixer
 from enum import Enum
@@ -22,7 +21,7 @@ import xml.etree.ElementTree as ET
 import datetime
 import threading
 import mmap
-import ffmpeg
+##import ffmpeg
 from subprocess import PIPE, run
 # QA Code
 from radon.raw import analyze
@@ -83,8 +82,8 @@ class Application():
         self.w.title(title)
         self.w.geometry(geom)
 ##        self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
-        tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
-        tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0,sticky=tk.S)
+        tk.Label(self.w,text=text,justify=tk.LEFT).pack()
+        tk.Button(self.w,text="Ok",command=self.w.destroy).pack()
         self.w.mainloop()
 
     def quit(self):
@@ -248,18 +247,41 @@ class ImportDataWindow():
         self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW)
         self.root.protocol("WM_DELETE_WINDOW",self.app.bindHotkeys)
         self.root.mainloop()
+    def loadAudioThread(self):
+        """Load Audio and Restore Control"""
+        loadAudio = not self.loadAudio.get()
+        self.focus.after(1,self.flabel.config,{"text":"Importing Video"+["",", Preparing Audio"][loadAudio]})
+        self.app.loadVideo(self.app.videoPath,loadAudio=loadAudio)# Invert Boolean
+        self.focus.after(1,self.flabel.config,{"text":"Importing fNIRS Data"})
+        self.app.loadData(self.app.dataPath)
+        self.root.after(1,self.threadComplete)
+    def threadComplete(self):
+        """Called when Thread Completed"""
+        self.flabel.config(text="Import Complete")
+        tk.Button(self.focus,text="Ok",command=self.closePopup).pack()
+    def closePopup(self):
+        """Close the Popup"""
+        self.app.bindHotkeys()
+        self.focus.grab_release()
+        self.focus.destroy()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
         vidpath = self.vidPathEntry.get()
         xmlpath = self.fnirsPathEntry.get()
+        # Update Project Video and Data Paths
         self.app.dataPath = xmlpath
         self.app.videoPath = vidpath
         self.root.destroy()
-        loadAudio = not self.loadAudio.get()
-        self.app.loadData(xmlpath)
-        self.app.bindHotkeys()
-        self.root.grab_release()
-        self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
+        # Create Popup
+        self.focus = tk.Toplevel()
+        self.focus.geometry("320x120")
+        self.focus.grab_set()
+        self.focus.title("Data Importer")
+        self.focus.protocol("WM_DELETE_WINDOW",lambda: None)
+        self.flabel = tk.Label(self.focus,text="Preparing Audio, Please Wait...")
+        self.flabel.pack()
+        # Run Lengthy Operation in Thread
+        threading.Thread(target=self.loadAudioThread,daemon=True).start()
 
 class SyncToolWindow():
     def __init__(self,app):
@@ -671,7 +693,7 @@ class VideoPlayer():
             print("Error Loading Audio")
             self.hasAudio = False
         self.vid = cv2.VideoCapture(self.vid_path)# Reload video component
-        self.app.popup("Audio Importer","Audio Import Complete")
+        # Launch in GUI Thread
     def loadCachedAudio(self):
         """Unstable, for testing purposes only"""
         self.aud_path = "project_audio.mp3"
@@ -836,7 +858,7 @@ vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 
-qa_test()
+##qa_test()
 
 app = Application()
 #audio = (for debugging)

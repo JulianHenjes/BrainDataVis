@@ -837,3 +837,76 @@ Jan-08-2021
 		A M 759:4->766 VideoPlayer.stop - 3
 		A M 768:4->772 VideoPlayer.setBlackFrame - 1
 		B M 774:4->812 VideoPlayer.stream - 8
+Jan-09-2021
+	General Analysis
+		Module(loc=873, lloc=694, sloc=629, comments=164, multi=2, blank=88, single_comments=154)
+	Cyclomatic Complexity
+		A F 837:0->849 qa_test - 2
+		A C 42:0->224 Application - 3
+		A M 45:4->73 Application.__init__ - 2
+		A M 75:4->77 Application.launchHelpWindow - 1
+		A M 79:4->87 Application.popup - 1
+		A M 89:4->93 Application.quit - 1
+		A M 95:4->99 Application.launchImportWindow - 1
+		A M 101:4->105 Application.launchSyncToolWindow - 1
+		B M 107:4->129 Application.reconfigureChannels - 6
+		A M 131:4->139 Application.loadData - 3
+		A M 141:4->144 Application.loadVideo - 1
+		A M 146:4->152 Application.play - 2
+		A M 154:4->160 Application.pause - 2
+		A M 162:4->168 Application.stop - 2
+		A M 170:4->177 Application.zoom - 3
+		A M 179:4->188 Application.skipFor - 2
+		A M 190:4->197 Application.bindHotkeys - 1
+		A M 199:4->204 Application.unbind - 3
+		A M 206:4->210 Application.bindDPHotkeys - 2
+		A M 212:4->215 Application.mainloop - 1
+		A M 217:4->224 Application.loadFNIRS - 2
+		A C 227:0->284 ImportDataWindow - 2
+		A M 228:4->249 ImportDataWindow.__init__ - 1
+		A M 250:4->257 ImportDataWindow.loadAudioThread - 1
+		A M 258:4->261 ImportDataWindow.threadComplete - 1
+		A M 262:4->266 ImportDataWindow.closePopup - 1
+		A M 267:4->284 ImportDataWindow.onSubmit - 1
+		A C 286:0->333 SyncToolWindow - 4
+		A M 287:4->309 SyncToolWindow.__init__ - 2
+		A M 310:4->333 SyncToolWindow.onSubmit - 4
+		A C 335:0->376 ChannelSelector - 3
+		A M 339:4->349 ChannelSelector.__init__ - 1
+		A M 350:4->357 ChannelSelector.loadData - 3
+		A M 358:4->362 ChannelSelector.removeCheckbuttons - 2
+		A M 363:4->367 ChannelSelector.addOption - 1
+		A M 368:4->376 ChannelSelector.onClickCheckbutton - 2
+		A C 378:0->614 DataPlayer - 3
+		A M 381:4->410 DataPlayer.__init__ - 1
+		A M 412:4->415 DataPlayer.clear - 1
+		B M 417:4->439 DataPlayer.zoom - 6
+		A M 441:4->447 DataPlayer.plot - 1
+		A M 449:4->462 DataPlayer.drawScrubber - 5
+		A M 464:4->490 DataPlayer.update - 4
+		A M 492:4->506 DataPlayer.seek - 2
+		A M 508:4->510 DataPlayer.bindSeek - 1
+		A M 512:4->514 DataPlayer.bindZoom - 1
+		A M 516:4->518 DataPlayer.unbind - 1
+		A M 520:4->524 DataPlayer.setScaleX - 1
+		A M 526:4->528 DataPlayer.setScaleY - 1
+		A M 530:4->549 DataPlayer.loadData - 5
+		A M 550:4->555 DataPlayer.getData - 2
+		A M 556:4->577 DataPlayer.drawLayout - 4
+		B M 578:4->614 DataPlayer.draw - 9
+		A C 618:0->834 VideoPlayer - 4
+		A M 628:4->656 VideoPlayer.__init__ - 1
+		A M 658:4->659 VideoPlayer.isPlaying - 1
+		A M 660:4->661 VideoPlayer.isPaused - 1
+		A M 662:4->663 VideoPlayer.isStopped - 1
+		A M 664:4->665 VideoPlayer.isEmpty - 1
+		A M 666:4->695 VideoPlayer.loadAudio - 4
+		A M 697:4->708 VideoPlayer.loadCachedAudio - 2
+		A M 710:4->723 VideoPlayer.loadVideo - 2
+		A M 725:4->731 VideoPlayer.updateDataplayers - 3
+		B M 733:4->751 VideoPlayer.play - 7
+		B M 753:4->768 VideoPlayer.seek - 6
+		A M 770:4->779 VideoPlayer.pause - 3
+		A M 781:4->788 VideoPlayer.stop - 3
+		A M 790:4->794 VideoPlayer.setBlackFrame - 1
+		B M 796:4->834 VideoPlayer.stream - 8
