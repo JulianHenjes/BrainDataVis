@@ -1,4 +1,5 @@
 # Python 3.6.2, 64-bit
+# Requires ffmpeg
 # Dependencies:
 # imageio
 # imageio_ffmpeg
@@ -12,9 +13,7 @@ import tkinter as tk
 from PIL import ImageTk, Image
 import cv2
 import numpy as np
-from moviepy.editor import VideoFileClip
 import os
-import threading
 import time
 import pygame.mixer as mixer
 from enum import Enum
@@ -22,7 +21,8 @@ import xml.etree.ElementTree as ET
 import datetime
 import threading
 import mmap
-import ffmpeg
+##import ffmpeg
+from subprocess import PIPE, run
 # QA Code
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
@@ -47,6 +47,7 @@ class Application():
         # Create window and set title
         self.root = tk.Tk()
         self.root.title("Brain Data Visualisation Tool")
+        self.root.protocol("WM_DELETE_WINDOW",self.quit)# Stop video player before closing
 
         # Create menubar
         menubar = tk.Menu(tearoff=False)
@@ -63,6 +64,7 @@ class Application():
         self.controlLock = threading.Lock()
         self.dataPath = ""
         self.videoPath = ""
+        self.data = None # fNIRS data
 
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
         self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
@@ -74,28 +76,34 @@ class Application():
         """Create a Window to Display Help"""
         self.popup("Help",HELP,geom="350x160")
 
-    def popup(self,title,text,geom="400x200"):
+    def popup(self,title,text,geom="300x100"):
         """Create a Simple Popup"""
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
-        tk.Label(self.w,text=text,justify=tk.LEFT).grid(row=0,column=0,sticky=tk.NW)
-        tk.Button(self.w,text="Ok",command=self.w.destroy).grid(row=1,column=0)
+##        self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
+        tk.Label(self.w,text=text,justify=tk.LEFT).pack()
+        tk.Button(self.w,text="Ok",command=self.w.destroy).pack()
+        self.w.mainloop()
 
     def quit(self):
+        """Called when main root closed or quit via menubar"""
+        self.unbind()
         self.videoPlayer.stop()
         self.root.destroy()
 
     def launchImportWindow(self):
         """Launches the Data Importing Interface"""
-        self.videoPlayer.stop()
+        self.unbind()
+        self.videoPlayer.pause()
         self.w_import = ImportDataWindow(self)
 
     def launchSyncToolWindow(self):
         """Launches the Sync Tool Window"""
-        self.videoPlayer.stop()
+        self.unbind()
+        self.videoPlayer.pause()
         self.w_synctool = SyncToolWindow(self)
-
+        
     def reconfigureChannels(self,dataPath,channels):
         """Given dataPath to xml fNIRS file, and a boolean mask (channels),
             destroy and recreate all necessary data players"""
@@ -123,10 +131,11 @@ class Application():
     def loadData(self,dataPath,resetChannelSelector=True):
         """Load fNIRS data from path"""
         self.dataPath = dataPath
+        self.loadFNIRS(dataPath)
         if resetChannelSelector:
             self.channelSelector.loadData(dataPath)
         for dp in self.dataPlayers:
-            dp.loadData(dataPath)
+            dp.loadData()
             dp.draw()
 
     def loadVideo(self,path,loadAudio=False):
@@ -187,6 +196,13 @@ class Application():
         self.root.bind("<Left>",lambda event, t=-10: self.skipFor(event,t=t))
         self.bindDPHotkeys()
 
+    def unbind(self):
+        """Unbind Hotkeys"""
+        for k in ["s","p","x","<Right>","<Left>"]:
+            self.root.unbind(k)
+        for dp in self.dataPlayers:
+            dp.unbind()
+
     def bindDPHotkeys(self):
         """Bind Dataplayer Hotkeys"""
         for dp in self.dataPlayers:
@@ -198,12 +214,23 @@ class Application():
         self.bindHotkeys()
         self.root.mainloop()
 
+    def loadFNIRS(self,filepath):
+        """Load fNIRS data from .xml file into app"""
+        self.tree = ET.parse(filepath)
+        self.data = self.tree.getroot().find("data")
+        self.samplerate = float(self.tree.getroot().find('device').find('samplerate').text)
+        self.sensors = [i.text for i in self.tree.getroot().find('columns')]
+        self.sensorMask = [True]*len(self.sensors)
+        self.measurements = len(self.tree.getroot().find('data'))
+
+
 class ImportDataWindow():
     def __init__(self,app):
         """Create a Window to get Project Data"""
         # Keep Reference to Main Window
         self.app = app
         self.root = tk.Toplevel()
+        self.root.grab_set()
         self.root.title("File")
         self.root.geometry("750x200")
         # Create, Grid, and Bind Widgets
@@ -212,23 +239,49 @@ class ImportDataWindow():
         self.vidPathEntry.grid(row=1,column=0,sticky=tk.NW)
         self.vidPathEntry.insert(tk.END,self.app.videoPath)
         self.loadAudio = tk.IntVar()
-        tk.Checkbutton(self.root,text="Use Cached Audio [EXPERIMENTAL]",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
+        tk.Checkbutton(self.root,text="Use Cached Audio",variable=self.loadAudio).grid(row=2,column=0,sticky=tk.NW)
         tk.Label(self.root,text="File Path to fNIRS (.xml) Data: ").grid(row=3,column=0,sticky=tk.NW)
         self.fnirsPathEntry = tk.Entry(self.root,width=120)
         self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW)
         self.fnirsPathEntry.insert(tk.END,self.app.dataPath)
         self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW)
+        self.root.protocol("WM_DELETE_WINDOW",self.app.bindHotkeys)
         self.root.mainloop()
+    def loadAudioThread(self):
+        """Load Audio and Restore Control"""
+        loadAudio = not self.loadAudio.get()
+        self.focus.after(1,self.flabel.config,{"text":"Importing Video"+["",", Preparing Audio"][loadAudio]})
+        self.app.loadVideo(self.app.videoPath,loadAudio=loadAudio)# Invert Boolean
+        self.focus.after(1,self.flabel.config,{"text":"Importing fNIRS Data"})
+        self.app.loadData(self.app.dataPath)
+        self.root.after(1,self.threadComplete)
+    def threadComplete(self):
+        """Called when Thread Completed"""
+        self.flabel.config(text="Import Complete")
+        tk.Button(self.focus,text="Ok",command=self.closePopup).pack()
+    def closePopup(self):
+        """Close the Popup"""
+        self.app.bindHotkeys()
+        self.focus.grab_release()
+        self.focus.destroy()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
         vidpath = self.vidPathEntry.get()
         xmlpath = self.fnirsPathEntry.get()
+        # Update Project Video and Data Paths
         self.app.dataPath = xmlpath
         self.app.videoPath = vidpath
         self.root.destroy()
-        loadAudio = not self.loadAudio.get()
-        self.app.loadVideo(vidpath,loadAudio=loadAudio)# Invert Boolean
-        self.app.loadData(xmlpath)
+        # Create Popup
+        self.focus = tk.Toplevel()
+        self.focus.geometry("320x120")
+        self.focus.grab_set()
+        self.focus.title("Data Importer")
+        self.focus.protocol("WM_DELETE_WINDOW",lambda: None)
+        self.flabel = tk.Label(self.focus,text="Preparing Audio, Please Wait...")
+        self.flabel.pack()
+        # Run Lengthy Operation in Thread
+        threading.Thread(target=self.loadAudioThread,daemon=True).start()
 
 class SyncToolWindow():
     def __init__(self,app):
@@ -236,6 +289,7 @@ class SyncToolWindow():
         # Keep Reference to Main Window
         self.app = app
         self.root = tk.Toplevel()
+        self.root.grab_set()
         self.root.title("Set Sync Offset")
         self.root.geometry("750x200")
         # Create, Grid, and Bind Widgets
@@ -251,6 +305,8 @@ class SyncToolWindow():
         if self.app.colBlindMode:
             colBlindCheck.select()
         self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=4,column=0,sticky=tk.NW)
+        self.root.protocol("WM_DELETE_WINDOW",self.app.bindHotkeys)
+        self.root.mainloop()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
         global RED, BLUE
@@ -273,6 +329,8 @@ class SyncToolWindow():
         # Redraw Dataplayers to Immediately Update Colour Scheme
         for dp in self.app.dataPlayers:
             dp.draw()
+        self.app.bindHotkeys()
+        self.root.grab_release()
 
 class ChannelSelector():
     """fNIRS Data Channel Selection Widget"""
@@ -309,11 +367,13 @@ class ChannelSelector():
         self.checks[-1].grid(row=(len(self.checks)-1)%self.ROWS,column=(len(self.checks)-1)//self.ROWS,sticky=tk.NW)# Format Neatly
     def onClickCheckbutton(self):
         """Rearrange DataPlayers to New Configuration"""
+        self.app.unbind()
         mask = []
         for val in self.intvars:
             mask.append(val.get())
         # Recreate fNIRS Channels with channel mask
         self.app.reconfigureChannels(self.app.dataPath,mask)
+        self.app.bindHotkeys()
 
 class DataPlayer():
     """fNIRS Data Player Widget"""
@@ -328,7 +388,7 @@ class DataPlayer():
         
         # Create canvas widget
         self.c = tk.Canvas(self.root,width=self.w,height=self.h,bg='#ffffff')
-        self.c.grid(row=row,column=column,sticky=tk.NW,columnspan=2)
+        self.c.grid(row=row,column=column,sticky=tk.NW,columnspan=100)
 
         # Start and end of x scale (seconds)
         self.scalex = [0,1]
@@ -337,7 +397,6 @@ class DataPlayer():
         self.scaleLock = threading.Lock()
 
         # Member variables associate to currently loaded xml file
-        self.data = None# fNIRS xml data
         self.samplerate = 1# Device Sample Rate (Hz)
         self.sensors = None# List of sensor names
         self.sensorMask = None# Boolean mask for which sensors outputs to draw
@@ -415,7 +474,7 @@ class DataPlayer():
         scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Start and end of plot, in seconds
         x = ((elapsedTime-scalex_secs[0])/(scalex_secs[1]-scalex_secs[0]))*self.w
         self.drawScrubber()
-        
+
         # If out of bounds
         if x < 0:# Set canvas x range to 0
             self.scalex[1] -= self.scalex[0]
@@ -423,8 +482,8 @@ class DataPlayer():
             self.draw()# Draw starting strip
         if x > self.w:# Set canvas x range to proceed
             range_ = self.scalex[1] - self.scalex[0]
-            self.scalex[0] += range_
-            self.scalex[1] += range_
+            self.scalex[0] += range_*x/self.w
+            self.scalex[1] += range_*x/self.w
             self.draw()# Draw next strip
             
         # Update the canvas
@@ -432,6 +491,9 @@ class DataPlayer():
 
     def seek(self,event):
         """Seek to where the user clicked"""
+        if self.app.controlLock.locked():
+            return
+        self.app.controlLock.acquire()
         x = event.x
         scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Get x scale in seconds
         seekTo = (x/self.w) * (scalex_secs[1]-scalex_secs[0]) + scalex_secs[0]# Transform pixel coordinates to represented time
@@ -441,6 +503,7 @@ class DataPlayer():
         self.update(self.app.videoPlayer.startTimestamp)
         self.draw()
         self.app.videoPlayer.play()
+        self.app.controlLock.release()
 
     def bindSeek(self):
         """Bind button press on this widget to seeking behaviour"""
@@ -464,33 +527,30 @@ class DataPlayer():
         """Set y scale, one number representing the max value either side of 0"""
         self.scaley = [starty,endy]
 
-    def loadData(self,filepath):
-        """Load fNIRS data from .xml file"""
-        self.tree = ET.parse(filepath)
-        self.data = self.tree.getroot().find("data")
-        #self.data[ <sample> ][ <sensor_num> ]
-        
-        self.samplerate = float(self.tree.getroot().find('device').find('samplerate').text)
-        self.sensors = [i.text for i in self.tree.getroot().find('columns')]
-        self.sensorMask = [True]*len(self.sensors)
-        self.measurements = len(self.tree.getroot().find('data'))
+    def loadData(self):
+        """Update dataplayer with data stored in app"""
+        self.samplerate = self.app.samplerate
+        self.sensors = self.app.sensors
+        self.sensorMask = self.app.sensorMask
+        self.measurements = self.app.measurements
 
         # Get min and max data points
         for sens in self.sensor_ids:
             for i in range(1,self.measurements):
-                if float(self.data[i][sens].text) < self.sensor_range[0]:
-                    self.sensor_range[0] = float(self.data[i][sens].text)
-                elif float(self.data[i][sens].text) > self.sensor_range[1]:
-                    self.sensor_range[1] = float(self.data[i][sens].text)
+                if float(self.app.data[i][sens].text) < self.sensor_range[0]:
+                    self.sensor_range[0] = float(self.app.data[i][sens].text)
+                elif float(self.app.data[i][sens].text) > self.sensor_range[1]:
+                    self.sensor_range[1] = float(self.app.data[i][sens].text)
+        
         # Set x scale from 0 to end of track
-##        self.scalex = [0,self.measurements]
-        self.scalex = [0,self.w/2]
+        self.scalex = [0,self.measurements]
+##        self.scalex = [0,self.w/2]
         # Set y scale to maximum sensor measurement
         self.setScaleY(self.sensor_range[0], self.sensor_range[1])
     def getData(self,sensor_id,t):
         """Get data from sensor at time t"""
         try:
-            return round(float(self.data[int(t*self.samplerate)][sensor_id].text),3)
+            return round(float(self.app.data[int(t*self.samplerate)][sensor_id].text),3)
         except:# No data loaded, or scrubber out of bounds
             return 0
     def drawLayout(self):
@@ -499,8 +559,10 @@ class DataPlayer():
         self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
         if len(self.sensor_ids) == 2:# If displaying blue sensor
             self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
-        # Draw Border
-        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
+        # Draw Border -
+        for coords in [[2,2,self.w,2],[2,self.h,self.w,self.h],[2,2,2,self.h],[self.w,2,self.w,self.h]]:
+            self.c.create_rectangle(coords[0],coords[1],coords[2],coords[3],fill="#000000",width=2)
+##        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
         # Draw X Axis
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
@@ -515,38 +577,41 @@ class DataPlayer():
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
     def draw(self):
         """Draw braindata to canvas, with respect to fNIRS metadata and zoom"""
-        self.clear()
-        if self.data == None:# If no data, break
+        try:
+            self.clear()
+            if self.app.data == None:# If no data, break
+                return
+            # How much each pixel represents
+            if self.scalex[1]-self.scalex[0] == 0:
+                return
+            step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
+            # Draw Graph Background
+            self.drawLayout()
+            sens_index = [0]# If one sensor displayed in this data player
+            if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
+                sens_index = [1,0]# Draw order blue then red to make blue line on top
+            for s in sens_index:
+                i = self.scalex[0]
+                x = 0
+                while i < self.scalex[1]:
+                    i += step# i Is data
+                    x += 1# x is iteration/pixel-coordinate
+                    if i<0:# Skip data for t<0
+                        continue
+                    try:
+                        # Data retrieved from xml
+                        y = float(self.app.data[int(i)][self.sensor_ids[s]].text)
+                        y2 = float(self.app.data[int(i+step)][self.sensor_ids[s]].text)
+                        # Normalize into range 0 to 1 and multiply by height
+                        y = ((y-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
+                        y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
+                    except IndexError:# Missing data is skipped
+                        continue
+                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s],width=2)
+            self.drawScrubber()
+            self.c.update()
+        except tk.TclError:# If canvas destroyed, cancel draw operation
             return
-        # How much each pixel represents
-        if self.scalex[1]-self.scalex[0] == 0:
-            return
-        step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
-        # Draw Graph Background
-        self.drawLayout()
-        sens_index = [0]# If one sensor displayed in this data player
-        if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
-            sens_index = [1,0]# Draw order blue then red to make blue line on top
-        for s in sens_index:
-            i = self.scalex[0]
-            x = 0
-            while i < self.scalex[1]:
-                i += step# i Is data
-                x += 1# x is iteration/pixel-coordinate
-                if i<0:# Skip data for t<0
-                    continue
-                try:
-                    # Data retrieved from xml
-                    y = float(self.data[int(i)][self.sensor_ids[s]].text)
-                    y2 = float(self.data[int(i+step)][self.sensor_ids[s]].text)
-                    # Normalize into range 0 to 1 and multiply by height
-                    y = ((y-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
-                    y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
-                except IndexError:# Missing data is skipped
-                    continue
-                self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s],width=2)
-        self.drawScrubber()
-        self.c.update()
         
 
 
@@ -600,30 +665,47 @@ class VideoPlayer():
         return self.state == VideoPlayer.State.EMPTY
     def loadAudio(self,path):
         """Extract Audio From File, Save as MP3, Load"""
-        v = VideoFileClip(path)
-        audio = v.audio
-        self.hasAudio = True
-        if audio == None:
+        if self.vid:# Release video to access
+            self.vid.release()
+        # Check if has audio
+        mixer.music.unload()
+        command = "ffprobe -i \"{0}\" -show_streams -select_streams a -loglevel error".format(path)
+        result = run(command,stdout=PIPE,stderr=PIPE,universal_newlines=True,shell=True)
+        if result.stdout.startswith("[STREAM]"):# Contains audio
+            self.hasAudio = True
+        else:
             self.hasAudio = False
             return
         print("Preparing Audio...",end="")
-        t_start = time.time()
-        filename = "project_audio_"+str(int(t_start))+".mp3"
+        filename = "project_audio.mp3"
         self.aud_path = filename
-        audio.write_audiofile(filename,ffmpeg_params=None,verbose=False,logger=None)
+        t_start = time.time()
+        # Extract audio using ffmpeg, always overwrite
+        command = "ffmpeg -y -i \"{0}\" \"{1}\"".format(path,filename)
+        result = run(command,stdout=PIPE,stderr=PIPE,universal_newlines=True,shell=True)
+##        print(result.stderr)
         t_end = time.time()
-        print("Done [",int(t_end-t_start),"]",sep="")
+        print("Done[{0}]".format(int(t_end-t_start)))
         try:
             mixer.music.unload()
             mixer.music.load(filename)
         except:
-            print("[Error]")
+            print("Error Loading Audio")
             self.hasAudio = False
+        self.vid = cv2.VideoCapture(self.vid_path)# Reload video component
+        # Launch in GUI Thread
     def loadCachedAudio(self):
         """Unstable, for testing purposes only"""
         self.aud_path = "project_audio.mp3"
         mixer.music.unload()
-        mixer.music.load("project_audio.mp3")
+        print("Loading Cached Audio...")
+        try:
+            mixer.music.load("project_audio.mp3")
+        except:
+            print("Error Loading Cached Audio")
+            mixer.music.unload()
+            self.aud_path = None
+            self.hasAudio = False
 
     def loadVideo(self,path,loadAudio=True):
         """Select a video for the player, if loadAudio is False it will use the cached audio"""
@@ -632,13 +714,13 @@ class VideoPlayer():
         self.vid_path = path
         self.vid = cv2.VideoCapture(self.vid_path)
         self.delay = int(1000/self.vid.get(cv2.CAP_PROP_FPS))
-        self.hasAudio = True# If no audio in video, ignore audio
         self.vid_len = int(self.vid.get(cv2.CAP_PROP_FRAME_COUNT))/self.vid.get(cv2.CAP_PROP_FPS)
+        self.state = VideoPlayer.State.STOPPED
+        self.hasAudio = True# If no audio in video, ignore audio
         if loadAudio:
             self.loadAudio(self.vid_path)
         else:
             self.loadCachedAudio()
-        self.state = VideoPlayer.State.STOPPED
 
     def updateDataplayers(self):
         """Update subscribed dataplayer objects"""
@@ -724,7 +806,7 @@ class VideoPlayer():
             if mixer.music.get_busy():
                 mixer.music.pause()
         elif seconds < self.vid_len:
-            if not mixer.music.get_busy():
+            if not mixer.music.get_busy() and self.hasAudio:
                 mixer.music.play()
                 self.play()
         
