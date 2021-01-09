@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 import datetime
 import threading
 import mmap
-##import ffmpeg
+from pathvalidate import sanitize_filepath
 from subprocess import PIPE, run
 # QA Code
 from radon.raw import analyze
@@ -266,11 +266,8 @@ class ImportDataWindow():
         self.focus.destroy()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
-        vidpath = self.vidPathEntry.get()
-        xmlpath = self.fnirsPathEntry.get()
-        # Update Project Video and Data Paths
-        self.app.dataPath = xmlpath
-        self.app.videoPath = vidpath
+        vidpath = sanitize_filepath(self.vidPathEntry.get(),platform='auto')
+        xmlpath = sanitize_filepath(self.fnirsPathEntry.get(),platform='auto')
         self.root.destroy()
         # Create Popup
         self.focus = tk.Toplevel()
@@ -280,8 +277,16 @@ class ImportDataWindow():
         self.focus.protocol("WM_DELETE_WINDOW",lambda: None)
         self.flabel = tk.Label(self.focus,text="Preparing Audio, Please Wait...")
         self.flabel.pack()
-        # Run Lengthy Operation in Thread
-        threading.Thread(target=self.loadAudioThread,daemon=True).start()
+        if os.path.isfile(vidpath) and os.path.isfile(xmlpath):
+            # Update Project Video and Data Paths
+            self.app.dataPath = xmlpath
+            self.app.videoPath = vidpath
+            # Run Lengthy Operation in Thread
+            threading.Thread(target=self.loadAudioThread,daemon=True).start()
+        else:
+            # Jump to End of Import Sequence
+            self.threadComplete()
+            self.flabel.config(text="File does not exist!\nCheck file paths are correct")
 
 class SyncToolWindow():
     def __init__(self,app):
