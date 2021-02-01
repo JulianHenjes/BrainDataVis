@@ -461,8 +461,11 @@ class DataPlayer():
         self.scrubber.append(self.c.create_line(x,0,x,self.h,fill="#000000",tags=("scrubber")))# Scrubber line
         t = "-"*(self.progress<0) +str(datetime.timedelta(seconds=abs(round(self.progress))))
         self.scrubber.append(self.c.create_text(x+3,0,text=str(t),anchor=tk.NW,tags=("scrubber")))# Timestamp
+        if not self.sensors or self.sensors == []:
+            return
+        col_mod = self.sensor_ids[0]%2# If == 1, will label data track 1 in blue
         if self.progress > 0:
-            self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),fill=RED,anchor=tk.NW,tags=("scrubber")))# Red track value
+            self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),fill=[RED,BLUE][col_mod],anchor=tk.NW,tags=("scrubber")))# Red track value
             if len(self.sensor_ids) == 2:# If blue track exists
                 self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=BLUE,anchor=tk.NW,tags=("scrubber")))# Blue track value
         
@@ -561,9 +564,13 @@ class DataPlayer():
     def drawLayout(self):
         """Draw the Graph Axis and Labels, with respect to fNIRS metadata and zoom"""
         # Display sensor names
-        self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
-        if len(self.sensor_ids) == 2:# If displaying blue sensor
-            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
+        if not self.sensors:# Only plot if sensor names loaded
+            if self.sensor_ids[0]%2 == 0:# First sensor is Red
+                self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
+            elif self.sensor_ids[0]%2 == 1:# First sensor is Blue
+                self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=BLUE,anchor=tk.NW)
+            if len(self.sensor_ids) == 2:# Second sensor is Blue
+                self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
         # Draw Border -
         for coords in [[2,2,self.w,2],[2,self.h,self.w,self.h],[2,2,2,self.h],[self.w,2,self.w,self.h]]:
             self.c.create_rectangle(coords[0],coords[1],coords[2],coords[3],fill="#000000",width=2)
@@ -593,8 +600,11 @@ class DataPlayer():
             # Draw Graph Background
             self.drawLayout()
             sens_index = [0]# If one sensor displayed in this data player
+            col_mod = 0# If == 1 will draw primary line as blue
             if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
                 sens_index = [1,0]# Draw order blue then red to make blue line on top
+            elif self.sensor_ids[0]%2 == 1:
+                col_mod = 1
             for s in sens_index:
                 i = self.scalex[0]
                 x = 0
@@ -612,7 +622,7 @@ class DataPlayer():
                         y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
                     except IndexError:# Missing data is skipped
                         continue
-                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s],width=2)
+                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s+col_mod],width=2)
             self.drawScrubber()
             self.c.update()
         except tk.TclError:# If canvas destroyed, cancel draw operation
