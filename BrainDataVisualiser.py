@@ -564,7 +564,7 @@ class DataPlayer():
     def drawLayout(self):
         """Draw the Graph Axis and Labels, with respect to fNIRS metadata and zoom"""
         # Display sensor names
-        if not self.sensors:# Only plot if sensor names loaded
+        if self.sensors != None and self.sensors != []:# Only plot if sensor names loaded
             if self.sensor_ids[0]%2 == 0:# First sensor is Red
                 self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
             elif self.sensor_ids[0]%2 == 1:# First sensor is Blue
@@ -579,14 +579,28 @@ class DataPlayer():
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
         # Draw Y Axis Labels
-        self.c.create_text(5,5,text=str(self.scaley[1]),fill="#000000",anchor=tk.NW)
-        self.c.create_text(5,self.h-15,text=str(self.scaley[0]),fill="#000000",anchor=tk.SW)
+        self.c.create_text(5,5,text=str(round(self.scaley[1],3)),fill="#000000",anchor=tk.NW)
+        self.c.create_text(5,self.h-15,text=str(round(self.scaley[0],3)),fill="#000000",anchor=tk.SW)
         self.c.create_text(self.w-5,self.h-5,text=str(datetime.timedelta(seconds=round(self.scalex[1]/self.samplerate))),fill="#000000",anchor=tk.SE)
         # Draw X Axis Labels
         time_start = str(datetime.timedelta(seconds=abs(round(self.scalex[0]/self.samplerate))))
         if self.scalex[0] < 0:# Format correctly
             time_start = "-"+time_start
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
+    def fitYScale(self):
+        """Adapt y-scale to whatever portion of the track is selected"""
+        min_ = float(self.app.data[int(self.scalex[0])][self.sensor_ids[0]].text)
+        max_ = float(self.app.data[int(self.scalex[0])][self.sensor_ids[0]].text)
+        for s in [0,1][0:len(self.sensor_ids)]:
+            for i in range(max(20,int(self.scalex[0])),min(int(self.scalex[1]),self.measurements)):
+                y = float(self.app.data[i][self.sensor_ids[s]].text)
+                if y < min_:
+                    min_ = y
+                elif y > max_:
+                    max_ = y
+        min_ = min_ - abs(min_*0.2)
+        max_ = max_ + abs(max_*0.2)
+        self.setScaleY(min_,max_)
     def draw(self):
         """Draw braindata to canvas, with respect to fNIRS metadata and zoom"""
         try:
@@ -597,6 +611,7 @@ class DataPlayer():
             if self.scalex[1]-self.scalex[0] == 0:
                 return
             step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
+            self.fitYScale()
             # Draw Graph Background
             self.drawLayout()
             sens_index = [0]# If one sensor displayed in this data player
