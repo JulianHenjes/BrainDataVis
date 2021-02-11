@@ -1,3 +1,6 @@
+# Refactoring Done:
+# Removed obselete commented code
+
 # Python 3.6.2, 64-bit
 # Requires ffmpeg
 # Dependencies:
@@ -27,20 +30,27 @@ from subprocess import PIPE, run
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
 
-# Colour blind colours
-RED = "#D55F00"# Vermillion
-BLUE = "#0072B2"# Blue
-# Help Text
+# Colours
+RED = "#ff0000"
+BLUE = "#0000ff"
+# Colourblind Colours
+CB_RED = "#D55F00"# Vermillion
+CB_BLUE = "#0072B2"# Blue
+
+# Help Popup Text
 HELP = \
 """Controls
 p\t\tPlay
 s\t\tPause
 x\t\tStop
 LeftMB\t\tSeek
+LeftArrowKey\tSkip Forwards 10s
+RightArrowKey\tSkip Backwards 10s\n
+Refer to the User Manual for further help
 """
 
 class Application():
-    """Class for Application Window"""
+    """Class for Application Window and Project Settings"""
     
     def __init__(self):
 
@@ -49,6 +59,21 @@ class Application():
         self.root.title("Brain Data Visualisation Tool")
         self.root.protocol("WM_DELETE_WINDOW",self.quit)# Stop video player before closing
 
+        self.dataOffset = 0# Offset at which video is played relative to data
+        self.colBlindMode = 1# Colour blind mode
+        self.controlLock = threading.Lock()# Ensures thread-safe locking/unlocking access of user controls
+        self.dataPath = ""# Path to fNIRS data
+        self.videoPath = ""# Path to video data
+        self.data = None # fNIRS data
+
+        self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
+        self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
+        self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
+        for dp in self.dataPlayers:# Register all dataplayers to the videoplayer
+            self.videoPlayer.registerDataplayer(dp)
+
+    def createMenubar(self):
+        """Create menubar, call after any data loading behaviour"""
         # Create menubar
         menubar = tk.Menu(tearoff=False)
         self.root.config(menu=menubar)
@@ -58,34 +83,30 @@ class Application():
         filemenu.add_command(label="Help",command=self.launchHelpWindow)
         filemenu.add_command(label="Quit",command=self.quit)
         menubar.add_cascade(label="Project",menu=filemenu)
-        
-        self.dataOffset = 0# Offset at which video is played relative to data
-        self.colBlindMode = 1# Colour blind mode
-        self.controlLock = threading.Lock()
-        self.dataPath = ""
-        self.videoPath = ""
-        self.data = None # fNIRS data
 
-        self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
-        self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
-        self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
-        for dp in self.dataPlayers:
-            self.videoPlayer.dataplayers.append(dp)
+    def getOxyCol(self):
+        """Get Red Colour"""
+        return [RED,CB_RED][self.colBlindMode]
+
+    def getDeOxyCol(self):
+        """Get Blue Colour"""
+        return [BLUE,CB_BLUE][self.colBlindMode]
 
     def launchHelpWindow(self):
         """Create a Window to Display Help"""
-        self.popup("Help",HELP,geom="350x160")
+        self.popup("Help",HELP,geom="350x200")
 
     def popup(self,title,text,geom="300x100"):
         """Create a Simple Popup"""
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
-##        self.w.protocol("WM_DELETE_WINDOW",self.bindHotkeys)
         tk.Label(self.w,text=text,justify=tk.LEFT).pack()
         tk.Button(self.w,text="Ok",command=self.w.destroy).pack()
         self.w.mainloop()
 
+    # When an overriding window is launched, unbind user controls,
+    # pause, and shift focus on window
     def quit(self):
         """Called when main root closed or quit via menubar"""
         self.unbind()
@@ -103,16 +124,21 @@ class Application():
         self.unbind()
         self.videoPlayer.pause()
         self.w_synctool = SyncToolWindow(self)
-        
-    def reconfigureChannels(self,dataPath,channels):
-        """Given dataPath to xml fNIRS file, and a boolean mask (channels),
-            destroy and recreate all necessary data players"""
+
+    def deleteAllDataplayers(self):
+        """Removes Dataplayers"""
         # Remove references to data players
-        self.videoPlayer.dataPlayers = []
+        self.videoPlayer.unregisterAll()
+        # Remove dataplayers
         for dp in self.dataPlayers:
             dp.unbind()# Unbind GUI
             dp.c.destroy()# Destroy canvas objects
         self.dataPlayers = []
+    
+    def reconfigureChannels(self,dataPath,channels):
+        """Given dataPath to xml fNIRS file, and a boolean mask (channels),
+            destroy and recreate all necessary data players"""
+        self.deleteAllDataplayers()
         i = 0
         while i < len(channels):# For each channel
             sensor_ids = []
@@ -123,8 +149,9 @@ class Application():
                 # Create a dataplayer with configured sensors
                 self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=sensor_ids))
             i += 2
-        # Shallow copy array
-        self.videoPlayer.dataplayers = self.dataPlayers[:]
+        # Register all dataplayers
+        for dp in self.dataPlayers:
+            self.videoPlayer.registerDataplayer(dp)
         self.loadData(dataPath,resetChannelSelector=False)# Load data into dataplayers
         self.bindDPHotkeys()
 
@@ -157,6 +184,8 @@ class Application():
             return
         self.controlLock.acquire()
         self.videoPlayer.pause()
+        for dp in self.dataPlayers:
+            dp.update(self.videoPlayer.startTimestamp)
         self.controlLock.release()
         
     def stop(self,event=None):
@@ -302,7 +331,7 @@ class SyncToolWindow():
         self.offsetEntry = tk.Entry(self.root)
         self.offsetEntry.grid(row=1,column=0,sticky=tk.NW)
         self.offsetEntry.insert(0,self.app.dataOffset)
-        self.errLabel = tk.Label(self.root,fg=RED,text="")
+        self.errLabel = tk.Label(self.root,fg=self.app.getOxyCol(),text="")
         self.errLabel.grid(row=2,column=0)
         self.colblindFriendly = tk.IntVar()
         colBlindCheck = tk.Checkbutton(self.root,text="Colourblind Mode",variable=self.colblindFriendly)
@@ -314,7 +343,6 @@ class SyncToolWindow():
         self.root.mainloop()
     def onSubmit(self):
         """Called when Submit Button is Pressed"""
-        global RED, BLUE
         offset = self.offsetEntry.get()
         try:
             offset = float(offset)
@@ -325,12 +353,6 @@ class SyncToolWindow():
         self.root.destroy()
         colblind = self.colblindFriendly.get()
         self.app.colBlindMode = colblind
-        if colblind:# Set Colourscheme
-            RED = "#D55F00"
-            BLUE = "#0072B2"
-        else:
-            RED = "#ff0000"
-            BLUE = "#0000ff"
         # Redraw Dataplayers to Immediately Update Colour Scheme
         for dp in self.app.dataPlayers:
             dp.draw()
@@ -381,7 +403,7 @@ class ChannelSelector():
         self.app.bindHotkeys()
 
 class DataPlayer():
-    """fNIRS Data Player Widget"""
+    """fNIRS Data Player Widget, must be registered to video player to sync"""
 
     def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
         """Initialises data player"""
@@ -451,12 +473,17 @@ class DataPlayer():
         y = (y-scaley[0])/(scaley[1]-scaley[0])*self.h
         return (x,y)
 
-    def drawScrubber(self):
-        """Draw scrubber at progress location"""
-        x = self.plot(self.progress,0)[0]
+    def clearScrubber(self):
+        """Remove old frame's scrubber"""
+        self.c.delete("scrubber")
         if self.scrubber != []:
             for cid in self.scrubber:
                 self.c.delete(cid)
+
+    def drawScrubber(self):
+        """Draw scrubber at progress location"""
+        self.clearScrubber()
+        x = self.plot(self.progress,0)[0]
         self.scrubber = [self.c.create_rectangle(x-3,0,x+3,6,fill="#000000",tags=("scrubber"))]# Scrubber head
         self.scrubber.append(self.c.create_line(x,0,x,self.h,fill="#000000",tags=("scrubber")))# Scrubber line
         t = "-"*(self.progress<0) +str(datetime.timedelta(seconds=abs(round(self.progress))))
@@ -465,9 +492,10 @@ class DataPlayer():
             return
         col_mod = self.sensor_ids[0]%2# If == 1, will label data track 1 in blue
         if self.progress > 0:
-            self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),fill=[RED,BLUE][col_mod],anchor=tk.NW,tags=("scrubber")))# Red track value
+            self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),\
+                                                    fill=[self.app.getOxyCol(),self.app.getDeOxyCol()][col_mod],anchor=tk.NW,tags=("scrubber")))# Red track value
             if len(self.sensor_ids) == 2:# If blue track exists
-                self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=BLUE,anchor=tk.NW,tags=("scrubber")))# Blue track value
+                self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=self.app.getDeOxyCol(),anchor=tk.NW,tags=("scrubber")))# Blue track value
         
     def update(self,startTime):
         """Get updates from the video player"""
@@ -561,20 +589,22 @@ class DataPlayer():
             return round(float(self.app.data[int(t*self.samplerate)][sensor_id].text),3)
         except:# No data loaded, or scrubber out of bounds
             return 0
-    def drawLayout(self):
-        """Draw the Graph Axis and Labels, with respect to fNIRS metadata and zoom"""
-        # Display sensor names
-        if self.sensors != None and self.sensors != []:# Only plot if sensor names loaded
-            if self.sensor_ids[0]%2 == 0:# First sensor is Red
-                self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=RED,anchor=tk.NW)
-            elif self.sensor_ids[0]%2 == 1:# First sensor is Blue
-                self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=BLUE,anchor=tk.NW)
-            if len(self.sensor_ids) == 2:# Second sensor is Blue
-                self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=BLUE,anchor=tk.NW)
-        # Draw Border -
+
+    def drawLabels(self):
+        """Display Sensor Name Labels"""
+        if self.sensors == None or self.sensors == []:
+            return
+        col = [self.app.getOxyCol(),self.app.getDeOxyCol()][self.sensor_ids[0]%2]
+        self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=col,anchor=tk.NW)
+        if len(self.sensor_ids) == 2:
+            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=self.app.getDeOxyCol(),anchor=tk.NW)
+
+    def drawBorder(self):
+        # Draw Border
         for coords in [[2,2,self.w,2],[2,self.h,self.w,self.h],[2,2,2,self.h],[self.w,2,self.w,self.h]]:
             self.c.create_rectangle(coords[0],coords[1],coords[2],coords[3],fill="#000000",width=2)
-##        self.c.create_rectangle(2,2,self.w,self.h,fill="",outline="#000000",width=2)
+
+    def drawAxes(self):
         # Draw X Axis
         y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
@@ -587,6 +617,13 @@ class DataPlayer():
         if self.scalex[0] < 0:# Format correctly
             time_start = "-"+time_start
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
+
+    def drawLayout(self):
+        """Draw the Graph Axis and Labels, with respect to fNIRS metadata and zoom"""
+        self.drawBorder()
+        self.drawAxes()
+        self.drawLabels()
+        
     def fitYScale(self):
         """Adapt y-scale to whatever portion of the track is selected"""
         min_ = float(self.app.data[int(self.scalex[0])][self.sensor_ids[0]].text)
@@ -598,9 +635,11 @@ class DataPlayer():
                     min_ = y
                 elif y > max_:
                     max_ = y
-        min_ = min_ - abs(min_*0.2)
-        max_ = max_ + abs(max_*0.2)
+        range_ = abs(max_-min_)
+        min_ = min_ - (range_*0.2)
+        max_ = max_ + (range_*0.2)
         self.setScaleY(min_,max_)
+        
     def draw(self):
         """Draw braindata to canvas, with respect to fNIRS metadata and zoom"""
         try:
@@ -612,8 +651,6 @@ class DataPlayer():
                 return
             step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
             self.fitYScale()
-            # Draw Graph Background
-            self.drawLayout()
             sens_index = [0]# If one sensor displayed in this data player
             col_mod = 0# If == 1 will draw primary line as blue
             if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
@@ -623,6 +660,7 @@ class DataPlayer():
             for s in sens_index:
                 i = self.scalex[0]
                 x = 0
+                trackcol = [self.app.getOxyCol(),self.app.getDeOxyCol()][s+col_mod]# Track colour
                 while i < self.scalex[1]:
                     i += step# i Is data
                     x += 1# x is iteration/pixel-coordinate
@@ -637,7 +675,9 @@ class DataPlayer():
                         y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
                     except IndexError:# Missing data is skipped
                         continue
-                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=[RED,BLUE][s+col_mod],width=2)
+                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=trackcol,width=2)
+            # Draw Graph Background
+            self.drawLayout()
             self.drawScrubber()
             self.c.update()
         except tk.TclError:# If canvas destroyed, cancel draw operation
@@ -684,6 +724,12 @@ class VideoPlayer():
 
         # Black Frame
         self.setBlackFrame()
+    def registerDataplayer(self,dp):
+        """Register a Dataplayer"""
+        self.dataplayers.append(dp)
+    def unregisterAll(self):
+        """Unregister all Dataplayers"""
+        self.dataplayers = []
     # For comparing states
     def isPlaying(self):
         return self.state == VideoPlayer.State.PLAYING
@@ -846,7 +892,10 @@ class VideoPlayer():
         # Get next frame
         succ, image = self.vid.read()
         if not succ:
-            frame = ImageTk.PhotoImage(Image.fromarray(np.array([[0]*self.w]*self.h)))
+            self.setBlackFrame()
+            self.updateDataplayers()
+            self.player.after(self.delay//2, self.stream)
+            return
         else:
             # Frame processing pipeline
             image = cv2.resize(image, dsize=(self.w,self.h))
@@ -895,6 +944,7 @@ app = Application()
 audio = app.loadVideo(vid_path,loadAudio=False)
 app.loadData(data_path)
 app.reconfigureChannels(data_path,[True]*4)
+app.createMenubar()
 app.play()
 ##app.reconfigureChannels(data_path,[True,True,False])
 app.mainloop()
