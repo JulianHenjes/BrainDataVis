@@ -26,6 +26,7 @@ import threading
 import mmap
 from pathvalidate import sanitize_filepath
 from subprocess import PIPE, run
+import re
 # QA Code
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
@@ -36,6 +37,9 @@ BLUE = "#0000ff"
 # Colourblind Colours
 CB_RED = "#D55F00"# Vermillion
 CB_BLUE = "#0072B2"# Blue
+# Regex Expressions
+MATCH_OXY = ".*O2Hb.*"
+MATCH_DEOXY = ".*HHb.*"
 
 # Help Popup Text
 HELP = \
@@ -66,6 +70,10 @@ class Application():
         self.videoPath = ""# Path to video data
         self.data = None # fNIRS data
 
+        # Regex Objects
+        self.match_oxy = re.compile(MATCH_OXY)
+        self.match_deoxy = re.compile(MATCH_DEOXY)
+
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
         self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
@@ -91,6 +99,13 @@ class Application():
     def getDeOxyCol(self):
         """Get Blue Colour"""
         return [BLUE,CB_BLUE][self.colBlindMode]
+
+    def getSensorCol(self,sensor_name):
+        if self.match_oxy.match(sensor_name):
+            return self.getOxyCol()
+        elif self.match_deoxy.match(sensor_name):
+            return self.getDeOxyCol()
+        return "#000000"# No Specified Colour
 
     def launchHelpWindow(self):
         """Create a Window to Display Help"""
@@ -490,12 +505,13 @@ class DataPlayer():
         self.scrubber.append(self.c.create_text(x+3,0,text=str(t),anchor=tk.NW,tags=("scrubber")))# Timestamp
         if not self.sensors or self.sensors == []:
             return
-        col_mod = self.sensor_ids[0]%2# If == 1, will label data track 1 in blue
         if self.progress > 0:
+            col = self.app.getSensorCol(self.sensors[self.sensor_ids[0]])
             self.scrubber.append(self.c.create_text(x+3,10,text=str(self.getData(self.sensor_ids[0],self.progress)),\
-                                                    fill=[self.app.getOxyCol(),self.app.getDeOxyCol()][col_mod],anchor=tk.NW,tags=("scrubber")))# Red track value
-            if len(self.sensor_ids) == 2:# If blue track exists
-                self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=self.app.getDeOxyCol(),anchor=tk.NW,tags=("scrubber")))# Blue track value
+                                                    fill=col,anchor=tk.NW,tags=("scrubber")))# Red track value
+            if len(self.sensor_ids) == 2:# If second track exists
+                col = self.app.getSensorCol(self.sensors[self.sensor_ids[1]])
+                self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=col,anchor=tk.NW,tags=("scrubber")))
         
     def update(self,startTime):
         """Get updates from the video player"""
@@ -594,10 +610,11 @@ class DataPlayer():
         """Display Sensor Name Labels"""
         if self.sensors == None or self.sensors == []:
             return
-        col = [self.app.getOxyCol(),self.app.getDeOxyCol()][self.sensor_ids[0]%2]
+        col = self.app.getSensorCol(self.sensors[self.sensor_ids[0]])
         self.c.create_text(30,20,text=self.sensors[self.sensor_ids[0]],fill=col,anchor=tk.NW)
         if len(self.sensor_ids) == 2:
-            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=self.app.getDeOxyCol(),anchor=tk.NW)
+            col = self.app.getSensorCol(self.sensors[self.sensor_ids[1]])
+            self.c.create_text(30,40,text=self.sensors[self.sensor_ids[1]],fill=col,anchor=tk.NW)
 
     def drawBorder(self):
         # Draw Border
@@ -652,15 +669,12 @@ class DataPlayer():
             step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
             self.fitYScale()
             sens_index = [0]# If one sensor displayed in this data player
-            col_mod = 0# If == 1 will draw primary line as blue
             if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
                 sens_index = [1,0]# Draw order blue then red to make blue line on top
-            elif self.sensor_ids[0]%2 == 1:
-                col_mod = 1
             for s in sens_index:
                 i = self.scalex[0]
                 x = 0
-                trackcol = [self.app.getOxyCol(),self.app.getDeOxyCol()][s+col_mod]# Track colour
+                trackcol = self.app.getSensorCol(self.sensors[self.sensor_ids[s]])
                 while i < self.scalex[1]:
                     i += step# i Is data
                     x += 1# x is iteration/pixel-coordinate
