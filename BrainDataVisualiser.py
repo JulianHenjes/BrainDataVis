@@ -1,6 +1,3 @@
-# Refactoring Done:
-# Removed obselete commented code
-
 # Python 3.6.2, 64-bit
 # Requires ffmpeg
 # Dependencies:
@@ -77,8 +74,17 @@ class Application():
         self.videoPlayer = VideoPlayer(self.root,self,row=0,column=0)
         self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
-        for dp in self.dataPlayers:# Register all dataplayers to the videoplayer
-            self.videoPlayer.registerDataplayer(dp)
+
+    def updateDataplayers(self,startTime):
+        """Update dataplayers"""
+        try:
+            for dp in self.dataPlayers:
+                dp.update(startTime)
+        except tk.TclError:# If dataplayers are destroyed, pass
+            pass
+        # Redraw dataplayers together
+        for dp in self.dataPlayers:
+            dp.redraw()
 
     def createMenubar(self):
         """Create menubar, call after any data loading behaviour"""
@@ -142,8 +148,6 @@ class Application():
 
     def deleteAllDataplayers(self):
         """Removes Dataplayers"""
-        # Remove references to data players
-        self.videoPlayer.unregisterAll()
         # Remove dataplayers
         for dp in self.dataPlayers:
             dp.unbind()# Unbind GUI
@@ -164,9 +168,6 @@ class Application():
                 # Create a dataplayer with configured sensors
                 self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=sensor_ids))
             i += 2
-        # Register all dataplayers
-        for dp in self.dataPlayers:
-            self.videoPlayer.registerDataplayer(dp)
         self.loadData(dataPath,resetChannelSelector=False)# Load data into dataplayers
         self.bindDPHotkeys()
 
@@ -418,7 +419,7 @@ class ChannelSelector():
         self.app.bindHotkeys()
 
 class DataPlayer():
-    """fNIRS Data Player Widget, must be registered to video player to sync"""
+    """fNIRS Data Player Widget"""
 
     def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
         """Initialises data player"""
@@ -437,6 +438,7 @@ class DataPlayer():
         # Height of each data track
         self.scaley = [-10,10]
         self.scaleLock = threading.Lock()
+        self.updateLock = threading.Lock()
 
         # Member variables associate to currently loaded xml file
         self.samplerate = 1# Device Sample Rate (Hz)
@@ -515,30 +517,34 @@ class DataPlayer():
         
     def update(self,startTime):
         """Get updates from the video player"""
-        # Calculate elapsed time
-        now = time.time()
-        elapsedTime = now-startTime+self.app.dataOffset
-        if self.app.videoPlayer.state == VideoPlayer.State.PLAYING:
-            self.progress = elapsedTime
+        if self.updateLock.locked():
+            return
+        with self.updateLock:
+            # Calculate elapsed time
+            now = time.time()
+            elapsedTime = now-startTime+self.app.dataOffset
+            if self.app.videoPlayer.state == VideoPlayer.State.PLAYING:
+                self.progress = elapsedTime
 
-        # Move the scrubber to the right place
-        timespan = 1/self.samplerate * (self.scalex[1]-self.scalex[0])# Time represented by canvas width, in seconds
-        scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Start and end of plot, in seconds
-        x = ((elapsedTime-scalex_secs[0])/(scalex_secs[1]-scalex_secs[0]))*self.w
-        self.drawScrubber()
+            # Move the scrubber to the right place
+            timespan = 1/self.samplerate * (self.scalex[1]-self.scalex[0])# Time represented by canvas width, in seconds
+            scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Start and end of plot, in seconds
+            x = ((elapsedTime-scalex_secs[0])/(scalex_secs[1]-scalex_secs[0]))*self.w
+            self.drawScrubber()
 
-        # If out of bounds
-        if x < 0:# Set canvas x range to 0
-            self.scalex[1] -= self.scalex[0]
-            self.scalex[0] = 0
-            self.draw()# Draw starting strip
-        if x > self.w:# Set canvas x range to proceed
-            range_ = self.scalex[1] - self.scalex[0]
-            self.scalex[0] += range_*x/self.w
-            self.scalex[1] += range_*x/self.w
-            self.draw()# Draw next strip
-            
-        # Update the canvas
+            # If out of bounds
+            if x < 0:# Set canvas x range to 0
+                self.scalex[1] -= self.scalex[0]
+                self.scalex[0] = 0
+                self.draw()# Draw starting strip
+            if x > self.w:# Set canvas x range to proceed
+                range_ = self.scalex[1] - self.scalex[0]
+                self.scalex[0] += range_*x/self.w
+                self.scalex[1] += range_*x/self.w
+                self.draw()# Draw next strip            
+
+    def redraw(self):
+        """Redraw the canvas"""
         self.c.update()
 
     def seek(self,event):
@@ -733,17 +739,8 @@ class VideoPlayer():
         self.vid = None
         self.vid_len = 0
 
-        # Linked DataPlayers
-        self.dataplayers = []
-
         # Black Frame
         self.setBlackFrame()
-    def registerDataplayer(self,dp):
-        """Register a Dataplayer"""
-        self.dataplayers.append(dp)
-    def unregisterAll(self):
-        """Unregister all Dataplayers"""
-        self.dataplayers = []
     # For comparing states
     def isPlaying(self):
         return self.state == VideoPlayer.State.PLAYING
@@ -813,12 +810,8 @@ class VideoPlayer():
             self.loadCachedAudio()
 
     def updateDataplayers(self):
-        """Update subscribed dataplayer objects"""
-        try:
-            for dp in self.dataplayers:
-                dp.update(self.startTimestamp)
-        except tk.TclError:# If dataplayers are destroyed, pass
-            pass
+        """Update dataplayer objects"""
+        self.app.updateDataplayers(self.startTimestamp)
 
     def play(self,event=None):
         """Causes the media to play, or resume playing"""
