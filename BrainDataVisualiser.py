@@ -169,6 +169,7 @@ class Application():
                 self.dataPlayers.append(DataPlayer(self.root,self,row=i+1,column=0,sensor_ids=sensor_ids))
             i += 2
         self.loadData(dataPath,resetChannelSelector=False)# Load data into dataplayers
+        self.videoPlayer.updateDataplayers()
         self.bindDPHotkeys()
 
     def loadData(self,dataPath,resetChannelSelector=True):
@@ -211,14 +212,23 @@ class Application():
         self.controlLock.acquire()
         self.videoPlayer.stop()
         self.controlLock.release()
-        
+
     def zoom(self,event):
         """Zoom in/out on dataplayers with scrollwheel"""
         if self.controlLock.locked():
             return
         self.controlLock.acquire()
-        for dp in self.dataPlayers:
+        if len(self.dataPlayers) > 0:
+            dp = self.dataPlayers[0]
             dp.zoom(event.delta*2/120)
+            scalex,scaley = dp.getScale()
+        # Do functions together
+        for dp in self.dataPlayers:
+            dp.setScaleX(scalex[0],scalex[1])
+        for dp in self.dataPlayers:
+            dp.draw()
+        for dp in self.dataPlayers:# Update canvas together
+            dp.redraw()
         self.controlLock.release()
         
     def skipFor(self,event,t=10):
@@ -458,6 +468,14 @@ class DataPlayer():
         self.c.delete(tk.ALL)
         self.scrubber = []
 
+    def getScale(self):
+        """Get scale"""
+        self.scaleLock.acquire()
+        scalex = self.scalex[:]
+        scaley = self.scaley[:]
+        self.scaleLock.release()
+        return (scalex,scaley)
+
     def zoom(self,factor):
         """Zoom in/out of dataplayer"""
         # Set x axis range
@@ -514,7 +532,7 @@ class DataPlayer():
             if len(self.sensor_ids) == 2:# If second track exists
                 col = self.app.getSensorCol(self.sensors[self.sensor_ids[1]])
                 self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=col,anchor=tk.NW,tags=("scrubber")))
-        
+    
     def update(self,startTime):
         """Get updates from the video player"""
         if self.updateLock.locked():
@@ -525,6 +543,8 @@ class DataPlayer():
             elapsedTime = now-startTime+self.app.dataOffset
             if self.app.videoPlayer.state == VideoPlayer.State.PLAYING:
                 self.progress = elapsedTime
+            elif self.app.videoPlayer.state == VideoPlayer.State.PAUSED:
+                self.progress = self.app.videoPlayer.progress
 
             # Move the scrubber to the right place
             timespan = 1/self.samplerate * (self.scalex[1]-self.scalex[0])# Time represented by canvas width, in seconds
@@ -811,7 +831,10 @@ class VideoPlayer():
 
     def updateDataplayers(self):
         """Update dataplayer objects"""
-        self.app.updateDataplayers(self.startTimestamp)
+        if self.state == VideoPlayer.State.PAUSED:
+            self.app.updateDataplayers(time.time()-self.progress)
+        elif self.state == VideoPlayer.State.PLAYING:
+            self.app.updateDataplayers(self.startTimestamp)
 
     def play(self,event=None):
         """Causes the media to play, or resume playing"""
