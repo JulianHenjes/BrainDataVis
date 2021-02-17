@@ -299,6 +299,7 @@ class ImportDataWindow():
         self.fnirsPathEntry = tk.Entry(self.root,width=120)
         self.fnirsPathEntry.grid(row=4,column=0,sticky=tk.NW)
         self.fnirsPathEntry.insert(tk.END,self.app.dataPath)
+##        self.fnirsPathEntry.insert(tk.END,data_path_gyro) # For Testing
         self.okbtn = tk.Button(self.root,text="Confirm",command=self.onSubmit).grid(row=5,column=0,sticky=tk.NW)
         self.root.protocol("WM_DELETE_WINDOW",self.app.bindHotkeys)
         self.root.mainloop()
@@ -479,9 +480,7 @@ class DataPlayer():
     def zoom(self,factor):
         """Zoom in/out of dataplayer"""
         # Set x axis range
-        self.scaleLock.acquire()
-        scalex = self.scalex[:]# Copy zoom
-        self.scaleLock.release()
+        scalex = self.getScale()[0]
         range_ = scalex[1] - scalex[0]
         scalex[0] += range_*factor/10
         scalex[1] -= range_*factor/10
@@ -493,16 +492,13 @@ class DataPlayer():
             range_ = self.measurements*2
         scalex[0] = self.progress*self.samplerate - range_/2
         scalex[1] = self.progress*self.samplerate + range_/2
-        self.scaleLock.acquire()
-        self.scalex = scalex[:]
-        self.scaleLock.release()
-        
+        self.setScaleX(scalex[0],scalex[1])        
         self.draw()
         self.update(self.app.videoPlayer.startTimestamp)
 
     def plot(self,x,y):
         """Transform data to pixel coordinates"""
-        scalex,scaley = self.scalex[:],self.scaley[:]
+        scalex,scaley = self.getScale()
         x = x*self.samplerate
         x = (x-scalex[0])/(scalex[1]-scalex[0])*self.w
         y = (y-scaley[0])/(scaley[1]-scaley[0])*self.h
@@ -546,22 +542,28 @@ class DataPlayer():
             elif self.app.videoPlayer.state == VideoPlayer.State.PAUSED:
                 self.progress = self.app.videoPlayer.progress
 
+            scalex,_ = self.getScale()
+
             # Move the scrubber to the right place
-            timespan = 1/self.samplerate * (self.scalex[1]-self.scalex[0])# Time represented by canvas width, in seconds
-            scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Start and end of plot, in seconds
+            timespan = 1/self.samplerate * (scalex[1]-scalex[0])# Time represented by canvas width, in seconds
+            scalex_secs = [scalex[0]/self.samplerate,scalex[1]/self.samplerate]# Start and end of plot, in seconds
             x = ((elapsedTime-scalex_secs[0])/(scalex_secs[1]-scalex_secs[0]))*self.w
             self.drawScrubber()
 
             # If out of bounds
             if x < 0:# Set canvas x range to 0
-                self.scalex[1] -= self.scalex[0]
-                self.scalex[0] = 0
+                scalex[1] -= scalex[0]
+                scalex[0] = 0
+                self.setScaleX(scalex[0],scalex[1])
+                self.fitYScale()
                 self.draw()# Draw starting strip
             if x > self.w:# Set canvas x range to proceed
-                range_ = self.scalex[1] - self.scalex[0]
-                self.scalex[0] += range_*x/self.w
-                self.scalex[1] += range_*x/self.w
-                self.draw()# Draw next strip            
+                range_ = scalex[1] - scalex[0]
+                scalex[0] += range_*x/self.w
+                scalex[1] += range_*x/self.w
+                self.setScaleX(scalex[0],scalex[1])
+                self.fitYScale()
+                self.draw()# Draw next strip
 
     def redraw(self):
         """Redraw the canvas"""
@@ -573,7 +575,8 @@ class DataPlayer():
             return
         self.app.controlLock.acquire()
         x = event.x
-        scalex_secs = [self.scalex[0]/self.samplerate,self.scalex[1]/self.samplerate]# Get x scale in seconds
+        scalex,_ = self.getScale()
+        scalex_secs = [scalex[0]/self.samplerate,scalex[1]/self.samplerate]# Get x scale in seconds
         seekTo = (x/self.w) * (scalex_secs[1]-scalex_secs[0]) + scalex_secs[0]# Transform pixel coordinates to represented time
         self.app.videoPlayer.pause()
         self.app.videoPlayer.seek(seekTo-self.app.dataOffset)
@@ -597,13 +600,19 @@ class DataPlayer():
 
     def setScaleX(self,startx,endx):
         """Set x scale to list"""
+        if startx == endx:
+            endx += 1
+        self.scaleLock.acquire()
         self.scalex = [startx,endx]
-        # Redraw
-        self.draw()
+        self.scaleLock.release()
         
     def setScaleY(self,starty,endy):
         """Set y scale, one number representing the max value either side of 0"""
+        if starty == endy:# Prevent /0 errors when scaling
+            endy += 0.1
+        self.scaleLock.acquire()
         self.scaley = [starty,endy]
+        self.scaleLock.release()
 
     def loadData(self):
         """Update dataplayer with data stored in app"""
@@ -614,11 +623,14 @@ class DataPlayer():
 
         # Get min and max data points
         for sens in self.sensor_ids:
-            for i in range(1,self.measurements):
-                if float(self.app.data[i][sens].text) < self.sensor_range[0]:
-                    self.sensor_range[0] = float(self.app.data[i][sens].text)
-                elif float(self.app.data[i][sens].text) > self.sensor_range[1]:
-                    self.sensor_range[1] = float(self.app.data[i][sens].text)
+            try:
+                for i in range(1,self.measurements):
+                    if float(self.app.data[i][sens].text) < self.sensor_range[0]:
+                        self.sensor_range[0] = float(self.app.data[i][sens].text)
+                    elif float(self.app.data[i][sens].text) > self.sensor_range[1]:
+                        self.sensor_range[1] = float(self.app.data[i][sens].text)
+            except:
+                print(self.app.data)
         
         # Set x scale from 0 to end of track
         self.scalex = [0,self.measurements]
@@ -627,6 +639,7 @@ class DataPlayer():
         self.setScaleY(self.sensor_range[0], self.sensor_range[1])
     def getData(self,sensor_id,t):
         """Get data from sensor at time t"""
+        assert t > 0 and t < self.measurements
         try:
             return round(float(self.app.data[int(t*self.samplerate)][sensor_id].text),3)
         except:# No data loaded, or scrubber out of bounds
@@ -648,15 +661,16 @@ class DataPlayer():
             self.c.create_rectangle(coords[0],coords[1],coords[2],coords[3],fill="#000000",width=2)
 
     def drawAxes(self):
+        scalex,scaley = self.getScale()
         # Draw X Axis
-        y0 = ((-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
+        y0 = ((-scaley[0])/(scaley[1]-scaley[0])) * self.h
         self.c.create_line(0,-y0+self.h,self.w,-y0+self.h,fill="#bebebe",width=2)
         # Draw Y Axis Labels
-        self.c.create_text(5,5,text=str(round(self.scaley[1],3)),fill="#000000",anchor=tk.NW)
-        self.c.create_text(5,self.h-15,text=str(round(self.scaley[0],3)),fill="#000000",anchor=tk.SW)
-        self.c.create_text(self.w-5,self.h-5,text=str(datetime.timedelta(seconds=round(self.scalex[1]/self.samplerate))),fill="#000000",anchor=tk.SE)
+        self.c.create_text(5,5,text=str(round(scaley[1],3)),fill="#000000",anchor=tk.NW)
+        self.c.create_text(5,self.h-15,text=str(round(scaley[0],3)),fill="#000000",anchor=tk.SW)
+        self.c.create_text(self.w-5,self.h-5,text=str(datetime.timedelta(seconds=round(scalex[1]/self.samplerate))),fill="#000000",anchor=tk.SE)
         # Draw X Axis Labels
-        time_start = str(datetime.timedelta(seconds=abs(round(self.scalex[0]/self.samplerate))))
+        time_start = str(datetime.timedelta(seconds=abs(round(scalex[0]/self.samplerate))))
         if self.scalex[0] < 0:# Format correctly
             time_start = "-"+time_start
         self.c.create_text(15,self.h-5,text=time_start,fill="#000000",anchor=tk.SW)
@@ -668,11 +682,15 @@ class DataPlayer():
         self.drawLabels()
         
     def fitYScale(self):
+        scalex,scaley = self.getScale()
         """Adapt y-scale to whatever portion of the track is selected"""
-        min_ = float(self.app.data[int(self.scalex[0])][self.sensor_ids[0]].text)
-        max_ = float(self.app.data[int(self.scalex[0])][self.sensor_ids[0]].text)
+        try:
+            min_ = self.getData(self.sensor_ids[0],self.progress)
+        except:
+            min_ = 0
+        max_ = min_
         for s in [0,1][0:len(self.sensor_ids)]:
-            for i in range(max(20,int(self.scalex[0])),min(int(self.scalex[1]),self.measurements)):
+            for i in range(max(20,int(scalex[0])),min(int(scalex[1]),self.measurements)):
                 y = float(self.app.data[i][self.sensor_ids[s]].text)
                 if y < min_:
                     min_ = y
@@ -685,23 +703,24 @@ class DataPlayer():
         
     def draw(self):
         """Draw braindata to canvas, with respect to fNIRS metadata and zoom"""
+        scalex,scaley = self.getScale()
         try:
             self.clear()
             if self.app.data == None:# If no data, break
                 return
             # How much each pixel represents
-            if self.scalex[1]-self.scalex[0] == 0:
+            if scalex[1]-scalex[0] == 0:
                 return
-            step = (self.scalex[1]-self.scalex[0])/self.w# Draw lines at pixel level resolution
+            step = (scalex[1]-scalex[0])/self.w# Draw lines at pixel level resolution
             self.fitYScale()
             sens_index = [0]# If one sensor displayed in this data player
             if len(self.sensor_ids) == 2:# If two sensors displayed in this data player
                 sens_index = [1,0]# Draw order blue then red to make blue line on top
             for s in sens_index:
-                i = self.scalex[0]
+                i = scalex[0]
                 x = 0
                 trackcol = self.app.getSensorCol(self.sensors[self.sensor_ids[s]])
-                while i < self.scalex[1]:
+                while i < scalex[1]:
                     i += step# i Is data
                     x += 1# x is iteration/pixel-coordinate
                     if i<0:# Skip data for t<0
@@ -711,8 +730,8 @@ class DataPlayer():
                         y = float(self.app.data[int(i)][self.sensor_ids[s]].text)
                         y2 = float(self.app.data[int(i+step)][self.sensor_ids[s]].text)
                         # Normalize into range 0 to 1 and multiply by height
-                        y = ((y-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
-                        y2 = ((y2-self.scaley[0])/(self.scaley[1]-self.scaley[0])) * self.h
+                        y = ((y-scaley[0])/(scaley[1]-scaley[0])) * self.h
+                        y2 = ((y2-scaley[0])/(scaley[1]-scaley[0])) * self.h
                     except IndexError:# Missing data is skipped
                         continue
                     self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=trackcol,width=2)
@@ -965,6 +984,7 @@ VISUAL = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_
 
 vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
+data_path_gyro = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\OtherData\\test3\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 
 ##qa_test()
