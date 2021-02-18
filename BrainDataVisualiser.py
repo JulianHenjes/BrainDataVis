@@ -45,6 +45,7 @@ p\t\tPlay
 s\t\tPause
 x\t\tStop
 LeftMB\t\tSeek
+RightMB\t\tPeek at Time
 LeftArrowKey\tSkip Forwards 10s
 RightArrowKey\tSkip Backwards 10s\n
 Refer to the User Manual for further help
@@ -59,6 +60,7 @@ class Application():
         self.root = tk.Tk()
         self.root.title("Brain Data Visualisation Tool")
         self.root.protocol("WM_DELETE_WINDOW",self.quit)# Stop video player before closing
+        self.root.iconbitmap('icon.ico')
 
         self.dataOffset = 0# Offset at which video is played relative to data
         self.colBlindMode = 1# Colour blind mode
@@ -261,8 +263,7 @@ class Application():
     def bindDPHotkeys(self):
         """Bind Dataplayer Hotkeys"""
         for dp in self.dataPlayers:
-            dp.bindSeek()
-            dp.bindZoom()
+            dp.bindKeys()
 
     def mainloop(self):
         """Hand over control to GUI loop"""
@@ -464,6 +465,9 @@ class DataPlayer():
         self.progress = 0# Keep track of current dataplayer timestamp when paused
         self.drawScrubber()
 
+        # 'Peek' Scrubber Visualisation
+        self.peekTime = 0
+
     def clear(self):
         """Clean canvas"""
         self.c.delete(tk.ALL)
@@ -504,6 +508,12 @@ class DataPlayer():
         y = (y-scaley[0])/(scaley[1]-scaley[0])*self.h
         return (x,y)
 
+    def horzToValue(self,x):
+        """Convert pixel x value to graph value"""
+        scalex,_ = self.getScale()
+        range_ = scalex[1]-scalex[0]
+        return ((x*range_/self.w) + scalex[0])/self.samplerate
+
     def clearScrubber(self):
         """Remove old frame's scrubber"""
         self.c.delete("scrubber")
@@ -528,6 +538,25 @@ class DataPlayer():
             if len(self.sensor_ids) == 2:# If second track exists
                 col = self.app.getSensorCol(self.sensors[self.sensor_ids[1]])
                 self.scrubber.append(self.c.create_text(x+3,20,text=str(self.getData(self.sensor_ids[1],self.progress)),fill=col,anchor=tk.NW,tags=("scrubber")))
+
+    def drawPeekScrubber(self):
+        """Draw the 'peek' scrubber"""
+        self.c.delete("peekScrubber")
+        x = self.plot(self.peekTime,0)[0]
+        self.c.create_line(x,0,x,self.h,fill="#666666",tags=("peekScrubber"))
+        self.c.create_text(x+3,0,text="", anchor = tk.NW,tags=("peekScrubberText"))
+        self.updatePeekScrubber()# Set text
+
+    def updatePeekScrubber(self):
+        """Update Only Peek Scrubber Text"""
+        if self.peekTime == None:
+            return
+        offset = round(self.peekTime-self.progress,3)
+        if offset > 0:# Sign positive offsets
+            offset = "+"+str(offset)
+        else:
+            offset = str(offset)
+        self.c.itemconfig("peekScrubberText",text="{0}s".format(offset))
     
     def update(self,startTime):
         """Get updates from the video player"""
@@ -564,6 +593,7 @@ class DataPlayer():
                 self.setScaleX(scalex[0],scalex[1])
                 self.fitYScale()
                 self.draw()# Draw next strip
+            self.updatePeekScrubber()
 
     def redraw(self):
         """Redraw the canvas"""
@@ -586,17 +616,22 @@ class DataPlayer():
         self.app.videoPlayer.play()
         self.app.controlLock.release()
 
-    def bindSeek(self):
-        """Bind button press on this widget to seeking behaviour"""
+    def bindKeys(self):
+        """Bind button presses on this widget to relevant behaviours"""
         self.c.bind("<Button-1>",self.seek)
-
-    def bindZoom(self):
-        """Bind button press on this widget to zoom behaviour (via app class)"""
         self.c.bind("<MouseWheel>",self.app.zoom)
+        self.c.bind("<Button-3>",self.peek)
+
+    def peek(self,event):
+        x = self.horzToValue(event.x)
+        self.peekTime = x
+        self.draw()
+        self.redraw()
 
     def unbind(self):
         self.c.unbind("<Button-1>")
         self.c.unbind("<MouseWheel>")
+        self.c.unbind("<Button-3>")
 
     def setScaleX(self,startx,endx):
         """Set x scale to list"""
@@ -706,6 +741,8 @@ class DataPlayer():
         scalex,scaley = self.getScale()
         try:
             self.clear()
+            # Draw Graph Background
+            self.drawLayout()
             if self.app.data == None:# If no data, break
                 return
             # How much each pixel represents
@@ -735,9 +772,8 @@ class DataPlayer():
                     except IndexError:# Missing data is skipped
                         continue
                     self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=trackcol,width=2)
-            # Draw Graph Background
-            self.drawLayout()
             self.drawScrubber()
+            self.drawPeekScrubber()
             self.c.update()
         except tk.TclError:# If canvas destroyed, cancel draw operation
             return
