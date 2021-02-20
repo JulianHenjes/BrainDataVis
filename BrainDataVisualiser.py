@@ -8,6 +8,7 @@
 # numpy
 # pygame
 # radon - For Quality Assurance Metrics Only
+# configparser
 
 import tkinter as tk
 from PIL import ImageTk, Image
@@ -24,6 +25,7 @@ import mmap
 from pathvalidate import sanitize_filepath
 from subprocess import PIPE, run
 import re
+import configparser
 # QA Code
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
@@ -77,6 +79,42 @@ class Application():
         self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
 
+        # Config Parser
+        self.CONFIG_FILE = "BDVSETTINGS.ini"
+        self.config = configparser.ConfigParser()
+        self.loadConfig()
+
+        self.createMenubar()
+
+    def loadConfig(self):
+        """Load Project Settings from BDV_settings.ini"""
+        self.config.read(self.CONFIG_FILE)
+        try:
+            assert "Settings" in self.config
+        except AssertionError:
+            print("Settings do not exist, creating new config file...")
+            self.saveConfig()
+        settings = self.config["Settings"]
+        self.dataPath = settings.get("datapath",fallback="")
+        self.videoPath = settings.get("videopath",fallback="")
+        self.dataOffset = settings.getfloat("dataoffset",fallback=0)
+        self.colBlindMode = settings.getboolean("colblindmode",False)
+        if self.videoPath != "":
+            self.loadVideo(vid_path,loadAudio=False)
+        if self.dataPath != "":
+            self.loadData(data_path)
+
+    def saveConfig(self):
+        """Save Project Settings to BDV_settings.ini"""
+        self.config["Settings"] = {}
+        settings = self.config["Settings"]
+        settings["datapath"] = self.dataPath
+        settings["videopath"] = self.videoPath
+        settings["dataoffset"] = str(self.dataOffset)
+        settings["colblindmode"] = str(self.colBlindMode)
+        with open(self.CONFIG_FILE,"w") as file:
+            self.config.write(file)
+
     def updateDataplayers(self,startTime):
         """Update dataplayers"""
         try:
@@ -119,12 +157,12 @@ class Application():
         """Create a Window to Display Help"""
         self.popup("Help",HELP,geom="350x200")
 
-    def popup(self,title,text,geom="300x100"):
+    def popup(self,title,text,geom="300x100",textcol="#000000"):
         """Create a Simple Popup"""
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
-        tk.Label(self.w,text=text,justify=tk.LEFT).pack()
+        tk.Label(self.w,text=text,justify=tk.LEFT,fg=textcol).pack()
         tk.Button(self.w,text="Ok",command=self.w.destroy).pack()
         self.w.mainloop()
 
@@ -134,6 +172,7 @@ class Application():
         """Called when main root closed or quit via menubar"""
         self.unbind()
         self.videoPlayer.stop()
+        self.saveConfig()
         self.root.destroy()
 
     def launchImportWindow(self):
@@ -544,7 +583,7 @@ class DataPlayer():
         self.c.delete("peekScrubber")
         x = self.plot(self.peekTime,0)[0]
         self.c.create_line(x,0,x,self.h,fill="#666666",tags=("peekScrubber"))
-        self.c.create_text(x+3,0,text="", anchor = tk.NW,tags=("peekScrubberText"))
+        self.c.create_text(x+3,self.h-1,text="", anchor = tk.SW,tags=("peekScrubberText"))
         self.updatePeekScrubber()# Set text
 
     def updatePeekScrubber(self):
@@ -569,7 +608,7 @@ class DataPlayer():
             if self.app.videoPlayer.state == VideoPlayer.State.PLAYING:
                 self.progress = elapsedTime
             elif self.app.videoPlayer.state == VideoPlayer.State.PAUSED:
-                self.progress = self.app.videoPlayer.progress
+                self.progress = self.app.videoPlayer.progress+self.app.dataOffset
 
             scalex,_ = self.getScale()
 
@@ -1026,13 +1065,9 @@ data_path_gyro = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Jul
 ##qa_test()
 
 app = Application()
-#audio = (for debugging)
-audio = app.loadVideo(vid_path,loadAudio=False)
-app.loadData(data_path)
-app.reconfigureChannels(data_path,[True]*4)
-app.createMenubar()
 app.play()
-##app.reconfigureChannels(data_path,[True,True,False])
+app.pause()
+
 app.mainloop()
 # Release video if used
 if app.videoPlayer.vid != None:
