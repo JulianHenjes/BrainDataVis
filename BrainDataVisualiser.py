@@ -34,9 +34,11 @@ from radon.complexity import cc_rank, cc_visit
 # Colours
 RED = "#ff0000"
 BLUE = "#0000ff"
+GREEN = "#00cc00"
 # Colourblind Colours
 CB_RED = "#D55F00"# Vermillion
 CB_BLUE = "#0072B2"# Blue
+CB_GREEN = "#cc79a7"# Uses Pink Instead, More Perceptible
 # Regex Expressions
 MATCH_OXY = ".*O2Hb.*"
 MATCH_DEOXY = ".*HHb.*"
@@ -117,9 +119,9 @@ class Application():
         self.dataOffset = settings.getfloat("dataoffset",fallback=0)
         self.colBlindMode = settings.getboolean("colblindmode",False)
         if self.videoPath != "":
-            self.loadVideo(vid_path,loadAudio=False)
+            self.loadVideo(self.videoPath,loadAudio=False)
         if self.dataPath != "":
-            self.loadData(data_path)
+            self.loadData(self.dataPath)
 
     def saveConfig(self):
         """Save Project Settings to BDV_settings.ini"""
@@ -163,11 +165,21 @@ class Application():
         """Get Blue Colour"""
         return [BLUE,CB_BLUE][self.colBlindMode]
 
+    def getOtherCol(self):
+        """Get Green Colour"""
+        return [GREEN, CB_GREEN][self.colBlindMode]
+
     def getSensorCol(self,sensor_name):
         if self.match_oxy.match(sensor_name):
             return self.getOxyCol()
         elif self.match_deoxy.match(sensor_name):
             return self.getDeOxyCol()
+        elif "HEADING" in sensor_name:
+            return self.getDeOxyCol()# Blue
+        elif "PITCH" in sensor_name:
+            return self.getOxyCol()# Red
+        elif "ROLL" in sensor_name:
+            return self.getOtherCol()# Green
         return "#000000"# No Specified Colour
 
     def launchHelpWindow(self):
@@ -446,6 +458,8 @@ class SyncToolWindow():
         # Update Dataplayers to Apply Offset and Colour Scheme
         if len(self.app.dataPlayers) > 0:# Prevent error if no dataplayers
             self.app.updateDataplayers(time.time()-self.app.dataPlayers[0].progress)
+        for dp in self.app.dataPlayers:
+            dp.redraw()
         self.app.bindHotkeys()
         self.root.grab_release()
 
@@ -632,7 +646,7 @@ class DataPlayer():
             elapsedTime = now-startTime+self.app.dataOffset
             if self.app.videoPlayer.state == VideoPlayer.State.PLAYING:
                 self.progress = elapsedTime
-            elif self.app.videoPlayer.state == VideoPlayer.State.PAUSED:
+            elif self.app.videoPlayer.state == VideoPlayer.State.PAUSED or self.app.videoPlayer.state == VideoPlayer.State.STOPPED:
                 self.progress = self.app.videoPlayer.progress+self.app.dataOffset
 
             scalex,_ = self.getScale()
@@ -1094,7 +1108,7 @@ vid_path = VISUAL
 data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\\Dissertation\\braindata.xml"
 data_path_gyro = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\OtherData\\test3\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
-
+#C:\Users\hench\OneDrive - The University of Nottingham\Julian_Max_project\OtherData\test3\braindata.xml
 ##qa_test()
 
 app = Application()
