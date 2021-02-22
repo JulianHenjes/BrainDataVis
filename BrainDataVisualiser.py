@@ -54,9 +54,13 @@ RightArrowKey\tSkip Backwards 10s\n
 Refer to the User Manual for further help
 """
 
-# Lets PyInstaller include icon file
-if getattr(sys, 'frozen', False):
-    os.chdir(sys._MEIPASS)
+
+# Include icon file when compiled with PyInstaller
+try:
+    base_path = sys._MEIPASS
+except:
+    base_path = os.path.abspath(".")
+ICON_PATH = os.path.join(base_path,"icon.ico")
 
 class Application():
     """Class for Application Window and Project Settings"""
@@ -67,7 +71,7 @@ class Application():
         self.root = tk.Tk()
         self.root.title("Brain Data Visualisation Tool")
         self.root.protocol("WM_DELETE_WINDOW",self.quit)# Stop video player before closing
-        self.root.iconbitmap('icon.ico')
+        self.root.iconbitmap(ICON_PATH)
 
         self.dataOffset = 0# Offset at which video is played relative to data
         self.colBlindMode = 1# Colour blind mode
@@ -167,7 +171,7 @@ class Application():
         self.w = tk.Toplevel()
         self.w.title(title)
         self.w.geometry(geom)
-        self.w.iconbitmap('icon.ico')
+        self.w.iconbitmap(ICON_PATH)
         tk.Label(self.w,text=text,justify=tk.LEFT,fg=textcol).pack()
         tk.Button(self.w,text="Ok",command=self.w.destroy).pack()
         self.w.mainloop()
@@ -334,7 +338,7 @@ class ImportDataWindow():
         self.root.grab_set()
         self.root.title("File")
         self.root.geometry("750x200")
-        self.root.iconbitmap('icon.ico')
+        self.root.iconbitmap(ICON_PATH)
         # Create, Grid, and Bind Widgets
         tk.Label(self.root,text="File Path to Video Data: ").grid(row=0,column=0,sticky=tk.NW)
         self.vidPathEntry = tk.Entry(self.root,width=120)
@@ -378,7 +382,7 @@ class ImportDataWindow():
         self.focus.grab_set()
         self.focus.title("Data Importer")
         self.focus.protocol("WM_DELETE_WINDOW",lambda: None)
-        self.focus.iconbitmap('icon.ico')
+        self.focus.iconbitmap(ICON_PATH)
         self.flabel = tk.Label(self.focus,text="Preparing Audio, Please Wait...")
         self.flabel.pack()
         if os.path.isfile(vidpath) and os.path.isfile(xmlpath):
@@ -401,7 +405,7 @@ class SyncToolWindow():
         self.root.grab_set()
         self.root.title("Set Sync Offset")
         self.root.geometry("750x200")
-        self.root.iconbitmap('icon.ico')
+        self.root.iconbitmap(ICON_PATH)
         # Create, Grid, and Bind Widgets
         tk.Label(self.root,text="fNIRS Data Offset (s):").grid(row=0,column=0)
         self.offsetEntry = tk.Entry(self.root)
