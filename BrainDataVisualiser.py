@@ -88,6 +88,14 @@ class Application():
         self.channelSelector = ChannelSelector(self.root,self,row=0,column=1)
         self.dataPlayers = [DataPlayer(self.root,self,row=1,column=0,sensor_ids=[0,1])]
 
+        # fNIRS Data
+        self.tree = None
+        self.data = None
+        self.samplerate = None
+        self.sensors = []
+        self.sensorMask = []
+        self.measurements = None
+
         # Config Parser
         self.CONFIG_FILE = "BDVSETTINGS.ini"
         self.config = configparser.ConfigParser()
@@ -266,6 +274,8 @@ class Application():
 
     def zoom(self,event):
         """Zoom in/out on dataplayers with scrollwheel"""
+        if self.measurements == None:
+            return
         if self.controlLock.locked():
             return
         self.controlLock.acquire()
@@ -433,9 +443,9 @@ class SyncToolWindow():
         self.root.destroy()
         colblind = self.colblindFriendly.get()
         self.app.colBlindMode = colblind
-        # Redraw Dataplayers to Immediately Update Colour Scheme
-        for dp in self.app.dataPlayers:
-            dp.draw()
+        # Update Dataplayers to Apply Offset and Colour Scheme
+        if len(self.app.dataPlayers) > 0:# Prevent error if no dataplayers
+            self.app.updateDataplayers(time.time()-self.app.dataPlayers[0].progress)
         self.app.bindHotkeys()
         self.root.grab_release()
 
@@ -485,7 +495,7 @@ class ChannelSelector():
 class DataPlayer():
     """fNIRS Data Player Widget"""
 
-    def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[4,5]):
+    def __init__(self,root,app,row=0,column=0,width=1000,height=100,sensor_ids=[0,1]):
         """Initialises data player"""
 
         # tkinter info
@@ -501,6 +511,8 @@ class DataPlayer():
         self.scalex = [0,1]
         # Height of each data track
         self.scaley = [-10,10]
+
+        # For Safe Threading
         self.scaleLock = threading.Lock()
         self.updateLock = threading.Lock()
 
@@ -631,21 +643,26 @@ class DataPlayer():
             x = ((elapsedTime-scalex_secs[0])/(scalex_secs[1]-scalex_secs[0]))*self.w
             self.drawScrubber()
 
-            # If out of bounds
-            if x < 0:# Set canvas x range to 0
-                scalex[1] -= scalex[0]
-                scalex[0] = 0
-                self.setScaleX(scalex[0],scalex[1])
-                self.fitYScale()
-                self.draw()# Draw starting strip
-            if x > self.w:# Set canvas x range to proceed
-                range_ = scalex[1] - scalex[0]
-                scalex[0] += range_*x/self.w
-                scalex[1] += range_*x/self.w
-                self.setScaleX(scalex[0],scalex[1])
-                self.fitYScale()
-                self.draw()# Draw next strip
-            self.updatePeekScrubber()
+            self.scaleAroundX(x)
+
+    def scaleAroundX(self,x):
+        """Set X Scale Around Value"""
+        scalex, _ = self.getScale()
+        # If out of bounds
+        if x < 0:# Set canvas x range to 0
+            scalex[1] -= scalex[0]
+            scalex[0] = 0
+            self.setScaleX(scalex[0],scalex[1])
+            self.fitYScale()
+            self.draw()# Draw starting strip
+        if x > self.w:# Set canvas x range to proceed
+            range_ = scalex[1] - scalex[0]
+            scalex[0] += range_*x/self.w
+            scalex[1] += range_*x/self.w
+            self.setScaleX(scalex[0],scalex[1])
+            self.fitYScale()
+            self.draw()# Draw next strip
+        self.updatePeekScrubber()
 
     def redraw(self):
         """Redraw the canvas"""
@@ -852,7 +869,7 @@ class VideoPlayer():
         self.root = root
         self.player = tk.Label(root,bg='#000000')
         self.player.grid(row=row,column=column,sticky=tk.NW)
-        self.startTimestamp = 0# Timestamp when video started (so correct frame is drawn)
+        self.startTimestamp = time.time()# Timestamp when video started (so correct frame is drawn)
         mixer.init()
 
         # Video Player Width And Height
