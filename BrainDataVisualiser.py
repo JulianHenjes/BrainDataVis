@@ -26,6 +26,7 @@ from pathvalidate import sanitize_filepath
 from subprocess import PIPE, run
 import re
 import configparser
+import sys
 # QA Code
 from radon.raw import analyze
 from radon.complexity import cc_rank, cc_visit
@@ -52,6 +53,10 @@ LeftArrowKey\tSkip Forwards 10s
 RightArrowKey\tSkip Backwards 10s\n
 Refer to the User Manual for further help
 """
+
+# Lets PyInstaller include icon file
+if getattr(sys, 'frozen', False):
+    os.chdir(sys._MEIPASS)
 
 class Application():
     """Class for Application Window and Project Settings"""
@@ -762,6 +767,8 @@ class DataPlayer():
     def fitYScale(self):
         scalex,scaley = self.getScale()
         """Adapt y-scale to whatever portion of the track is selected"""
+        if self.measurements == None:
+            return
         try:
             min_ = self.getData(self.sensor_ids[0],self.progress)
         except:
@@ -770,6 +777,7 @@ class DataPlayer():
         for s in [0,1][0:len(self.sensor_ids)]:
             for i in range(max(20,int(scalex[0])),min(int(scalex[1]),self.measurements)):
                 y = float(self.app.data[i][self.sensor_ids[s]].text)
+
                 if y < min_:
                     min_ = y
                 elif y > max_:
