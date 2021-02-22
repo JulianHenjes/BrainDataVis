@@ -459,6 +459,8 @@ class SyncToolWindow():
         if len(self.app.dataPlayers) > 0:# Prevent error if no dataplayers
             self.app.updateDataplayers(time.time()-self.app.dataPlayers[0].progress)
         for dp in self.app.dataPlayers:
+            dp.draw()
+        for dp in self.app.dataPlayers:
             dp.redraw()
         self.app.bindHotkeys()
         self.root.grab_release()
@@ -857,7 +859,7 @@ class DataPlayer():
                         y2 = ((y2-scaley[0])/(scaley[1]-scaley[0])) * self.h
                     except IndexError:# Missing data is skipped
                         continue
-                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=trackcol,width=2)
+                    self.c.create_line(x,-y+self.h,x+1,-y2+self.h,fill=trackcol,width=1)
             self.drawScrubber()
             self.drawPeekScrubber()
             self.c.update()
@@ -1054,8 +1056,10 @@ class VideoPlayer():
                 mixer.music.pause()
         elif seconds < self.vid_len:
             if not mixer.music.get_busy() and self.hasAudio:
-                mixer.music.play()
+                mixer.music.play(loops=0)
                 self.play()
+        else:# seconds > self.vid_len
+            mixer.music.play(start=seconds,loops=0)
         
         # Set frame number
         self.vid.set(cv2.CAP_PROP_POS_MSEC,seconds*1000)
