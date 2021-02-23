@@ -247,7 +247,8 @@ class Application():
         """Load fNIRS data from path"""
         self.dataPath = dataPath
         self.loadFNIRS(dataPath)
-        if resetChannelSelector:
+        if resetChannelSelector:# Remove all dataplayers and import new channel configuration
+            self.deleteAllDataplayers()
             self.channelSelector.loadData(dataPath)
         for dp in self.dataPlayers:
             dp.loadData()
@@ -492,6 +493,7 @@ class ChannelSelector():
         """Remove all Checkbuttons"""
         for cb in self.checks:
             cb.destroy()
+        self.checks = []
         self.intvars = []
     def addOption(self,text):
         """Add a Checkbutton and Option to Widget"""
@@ -681,7 +683,7 @@ class DataPlayer():
         self.updatePeekScrubber()
 
     def redraw(self):
-        """Redraw the canvas"""
+        """Update only the canvas - (redraws it)"""
         self.c.update()
 
     def seek(self,event):
@@ -1113,6 +1115,7 @@ data_path = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Modules\
 data_path_gyro = "C:\\Users\\hench\\OneDrive - The University of Nottingham\\Julian_Max_project\\OtherData\\test3\\braindata.xml"
 #C:\Users\hench\OneDrive - The University of Nottingham\Modules\Dissertation\braindata.xml
 #C:\Users\hench\OneDrive - The University of Nottingham\Julian_Max_project\OtherData\test3\braindata.xml
+
 ##qa_test()
 
 app = Application()
