@@ -103,6 +103,8 @@ class Application():
         self.config = configparser.ConfigParser()
         self.loadConfig()
 
+        # Create Menu
+        self.menubar = None
         self.createMenubar()
 
     def loadConfig(self):
@@ -148,14 +150,22 @@ class Application():
     def createMenubar(self):
         """Create menubar, call after any data loading behaviour"""
         # Create menubar
-        menubar = tk.Menu(tearoff=False)
-        self.root.config(menu=menubar)
-        filemenu = tk.Menu(menubar,tearoff=False)
+        self.menubar = tk.Menu(tearoff=False)
+        self.root.config(menu=self.menubar)
+        filemenu = tk.Menu(self.menubar,tearoff=False)
         filemenu.add_command(label="Edit Video/fNIRS Sources",command=self.launchImportWindow)
         filemenu.add_command(label="Synchronise Video/fNIRS",command=self.launchSyncToolWindow)
         filemenu.add_command(label="Help",command=self.launchHelpWindow)
         filemenu.add_command(label="Quit",command=self.quit)
-        menubar.add_cascade(label="Project",menu=filemenu)
+        self.menubar.add_cascade(label="Project",menu=filemenu)
+
+    def hideMenu(self):
+        """Hide Menu"""
+        self.root.config(menu="")
+
+    def showMenu(self):
+        """Show Menu"""
+        self.root.config(menu=self.menubar)
 
     def getOxyCol(self):
         """Get Red Colour"""
@@ -228,6 +238,7 @@ class Application():
     def reconfigureChannels(self,dataPath,channels):
         """Given dataPath to xml fNIRS file, and a boolean mask (channels),
             destroy and recreate all necessary data players"""
+        self.hideMenu()
         self.deleteAllDataplayers()
         i = 0
         while i < len(channels):# For each channel
@@ -242,6 +253,7 @@ class Application():
         self.loadData(dataPath,resetChannelSelector=False)# Load data into dataplayers
         self.videoPlayer.updateDataplayers()
         self.bindDPHotkeys()
+        self.showMenu()
 
     def loadData(self,dataPath,resetChannelSelector=True):
         """Load fNIRS data from path"""
