@@ -295,6 +295,7 @@ class Application():
             return
         self.controlLock.acquire()
         self.videoPlayer.stop()
+        self.videoPlayer.updateDataplayers()
         self.controlLock.release()
 
     def zoom(self,event):
@@ -992,6 +993,8 @@ class VideoPlayer():
             self.app.updateDataplayers(time.time()-self.progress)
         elif self.state == VideoPlayer.State.PLAYING:
             self.app.updateDataplayers(self.startTimestamp)
+        elif self.state == VideoPlayer.State.STOPPED:
+            self.app.updateDataplayers(time.time())
 
     def play(self,event=None):
         """Causes the media to play, or resume playing"""
@@ -1049,6 +1052,8 @@ class VideoPlayer():
         if self.hasAudio:
             mixer.music.stop()
         self.state = VideoPlayer.State.STOPPED
+        self.progress = 0
+        self.startTimestamp = time.time()
 
     def setBlackFrame(self):
         """Sets Widget to Display a Black Frame with Default Proportions"""
